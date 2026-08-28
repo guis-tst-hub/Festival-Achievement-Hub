@@ -22,15 +22,14 @@ async function render(pathname = "/") {
   );
 }
 
-test("renders the mobile festival experience", async () => {
+test("renders the generic idle mobile experience before an active event is loaded", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /万圣夜巡/);
-  assert.match(html, /夜巡成就/);
-  assert.match(html, /二维码测试台/);
+  assert.match(html, /活动未开始/);
+  assert.doesNotMatch(html, /雾隐学院|万圣夜巡|THE ARCHIVE IS ASLEEP|管理员入口/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
@@ -38,7 +37,9 @@ test("renders the desktop administration prototype", async () => {
   const response = await render("/admin");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /夜巡管理台/);
-  assert.match(html, /成就管理/);
-  assert.match(html, /活动包/);
+  assert.match(html, /NCPA/);
+  assert.match(html, /活动列表/);
+  assert.match(html, /新建活动/);
+  assert.match(html, /进入活动/);
+  assert.doesNotMatch(html, /成就管理/);
 });
