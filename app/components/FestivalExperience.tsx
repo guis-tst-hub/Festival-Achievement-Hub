@@ -14,8 +14,13 @@ import {
 } from "lucide-react";
 import jsQR from "jsqr";
 import QRCode from "qrcode";
-import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AchievementIconGraphic } from "./AchievementIconGraphic";
+import {
+  createActivityPackageContext,
+  isActivityPackageRequest,
+  type ActivityPackageResponse,
+} from "../lib/activity-package-api";
 import {
   CONFIG_CHANGED_EVENT,
   FestivalAchievement,
@@ -146,6 +151,10 @@ export function FestivalExperience() {
   const progress = activeAchievements.length
     ? Math.round((unlockedCount / activeAchievements.length) * 100)
     : 0;
+  const packageContext = useMemo(
+    () => createActivityPackageContext(config, unlockState),
+    [config, unlockState],
+  );
   const sampleAchievement = activeAchievements[0];
 
   useEffect(() => {
@@ -268,13 +277,13 @@ export function FestivalExperience() {
     if (scannerVideo.current) scannerVideo.current.srcObject = null;
   }, []);
 
-  function openScanner() {
+  const openScanner = useCallback(() => {
     setScannerMessage("");
     setScannerStatus("starting");
     scannerLocked.current = false;
     lastScannerRead.current = 0;
     setScannerOpen(true);
-  }
+  }, []);
 
   function closeScanner() {
     stopLiveScanner();
@@ -285,6 +294,39 @@ export function FestivalExperience() {
     closeScanner();
     window.setTimeout(openScanner, 0);
   }
+
+  useEffect(() => {
+    const handlePackageRequest = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || !isActivityPackageRequest(event.data)) return;
+      const source = event.source as Window | null;
+      if (!source) return;
+      const reply = (response: ActivityPackageResponse) => source.postMessage(response, event.origin);
+
+      if (event.data.type === "ncpa:activity-package:get-context") {
+        reply({
+          type: "ncpa:activity-package:context",
+          requestId: event.data.requestId,
+          context: packageContext,
+        });
+        return;
+      }
+
+      if (config.status !== "active") {
+        reply({
+          type: "ncpa:activity-package:error",
+          requestId: event.data.requestId,
+          message: "当前活动未开放",
+        });
+        return;
+      }
+
+      openScanner();
+      reply({ type: "ncpa:activity-package:scanner-opened", requestId: event.data.requestId });
+    };
+
+    window.addEventListener("message", handlePackageRequest);
+    return () => window.removeEventListener("message", handlePackageRequest);
+  }, [config.status, openScanner, packageContext]);
 
   useEffect(() => {
     if (!scannerOpen) return;
@@ -390,8 +432,7 @@ export function FestivalExperience() {
 
   return (
     <main className={`festival-stage ${config.status === "closed" ? "is-idle" : ""}`}>
-      <section className="phone-shell" aria-label="节日成就手机页面预览">
-        <div className="phone-grain" aria-hidden="true" />
+      <section className="phone-shell" aria-label="节日成就页面">
         {config.status === "closed" ? (
           <ClosedFestival />
         ) : (
@@ -418,14 +459,15 @@ export function FestivalExperience() {
             </button>
 
             <section className="progress-card" aria-label={`已解锁${unlockedCount}个，共${activeAchievements.length}个`}>
-              <div className="progress-copy">
-                <span className="section-kicker">收集进度</span>
-                <strong>{unlockedCount}<small> / {activeAchievements.length}</small></strong>
-                <p>{progress === 100 ? "全部成就已解锁" : "继续扫描二维码解锁成就"}</p>
+              <div className="progress-summary">
+                <div className="progress-copy">
+                  <span className="section-kicker">收集进度</span>
+                  <strong>{unlockedCount}<small> / {activeAchievements.length}</small></strong>
+                </div>
+                <span className="progress-percent">{progress}%</span>
               </div>
-              <div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as CSSProperties}>
-                <span>{progress}%</span>
-              </div>
+              <div className="progress-track" aria-hidden="true"><span style={{ width: `${progress}%` }} /></div>
+              <p>{progress === 100 ? "全部成就已解锁" : "继续扫描二维码解锁成就"}</p>
             </section>
 
             <section className="achievement-section" id="achievements">
@@ -528,39 +570,37 @@ export function FestivalExperience() {
         ) : null}
       </section>
 
-      {config.status === "active" ? <aside className="desktop-lab" aria-label="电脑二维码测试工具">
-        <div className="lab-heading">
-          <span className="lab-icon"><FlaskConical size={19} /></span>
-          <div><h2>二维码测试台</h2></div>
-        </div>
-        <p className="lab-intro">网页保持手机比例。下载测试二维码后，请使用手机活动页中的摄像头扫描。</p>
+      {config.status === "active" ? <details className="desktop-lab">
+        <summary><FlaskConical size={17} />本地测试工具</summary>
+        <div className="desktop-lab-body">
+          <p className="lab-intro">这里仅供电脑测试，手机访问时不会显示。</p>
 
-        <div className="manual-claim">
-          <label htmlFor="manual-code">或输入识别码</label>
-          <div>
-            <input id="manual-code" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="demo-1" />
-            <button disabled={isClaiming} onClick={() => void claimFromPayload(manualCode).catch((error) => setClaimResult({ kind: "error", title: "识别码无效", message: error instanceof Error ? error.message : "识别失败" }))} aria-label="提交识别码"><ArrowRight size={17} /></button>
+          <div className="manual-claim">
+            <label htmlFor="manual-code">输入识别码</label>
+            <div>
+              <input id="manual-code" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="demo-1" />
+              <button disabled={isClaiming} onClick={() => void claimFromPayload(manualCode).catch((error) => setClaimResult({ kind: "error", title: "识别码无效", message: error instanceof Error ? error.message : "识别失败" }))} aria-label="提交识别码"><ArrowRight size={17} /></button>
+            </div>
+          </div>
+
+          <div className="sample-qr-card">
+            <div className="sample-copy">
+              <span><QrCode size={16} />测试二维码</span>
+              <strong>{sampleAchievement?.name ?? "暂无成就"}</strong>
+              <small>下载后使用手机摄像头扫描。</small>
+            </div>
+            {/* The QR code is generated in-browser as a data URL, so image optimization does not apply. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {sampleQr ? <img src={sampleQr} alt={`${sampleAchievement?.name ?? "测试"}二维码`} /> : null}
+            {sampleQr ? <a href={sampleQr} download={`${sampleAchievement?.claimCode ?? "test-qr"}.png`}><Download size={14} />下载图片</a> : null}
+          </div>
+
+          <div className="lab-actions">
+            <button onClick={clearProgress}><RotateCcw size={14} />清空解锁进度</button>
+            <a href="/admin">管理台 <ArrowRight size={14} /></a>
           </div>
         </div>
-
-        <div className="sample-qr-card">
-          <div className="sample-copy">
-            <span><QrCode size={16} />测试二维码</span>
-            <strong>{sampleAchievement?.name ?? "暂无成就"}</strong>
-            <small>下载后使用手机摄像头扫描，检查完整解锁流程。</small>
-          </div>
-          {/* The QR code is generated in-browser as a data URL, so image optimization does not apply. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {sampleQr ? <img src={sampleQr} alt={`${sampleAchievement?.name ?? "测试"}二维码`} /> : null}
-          {sampleQr ? <a href={sampleQr} download={`${sampleAchievement?.claimCode ?? "test-qr"}.png`}><Download size={14} />下载图片</a> : null}
-        </div>
-
-        <div className="lab-actions">
-          <button onClick={clearProgress}><RotateCcw size={14} />清空解锁进度</button>
-          <a href="/admin">打开本地管理台 <ArrowRight size={14} /></a>
-        </div>
-        <p className="lab-note">个人收藏留在浏览器；匿名设备哈希和领取次数会发送到校验服务器。</p>
-      </aside> : null}
+      </details> : null}
     </main>
   );
 }

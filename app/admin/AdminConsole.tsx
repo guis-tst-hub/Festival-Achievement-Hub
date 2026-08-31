@@ -54,6 +54,7 @@ type PackageInspection = {
   eventId: string;
   name: string;
   version: string;
+  sdkVersion: number;
   entry: string;
   fileCount: number;
   status: "ready" | "published";
@@ -529,7 +530,9 @@ export function AdminConsole() {
       const manifest = JSON.parse(await manifestFile.async("string")) as Record<string, unknown>;
       const eventId = String(manifest.eventId ?? "");
       const entry = String(manifest.entry ?? "index.html");
+      const sdkVersion = Number(manifest.sdkVersion);
       if (!eventId || !String(manifest.version ?? "")) throw new Error("manifest缺少eventId或version");
+      if (sdkVersion !== 1) throw new Error("manifest的sdkVersion必须为1");
       if (eventId !== config.eventId) throw new Error(`活动包编号应为当前活动：${config.eventId}`);
       if (!zip.file(entry)) throw new Error(`找不到入口页面：${entry}`);
 
@@ -538,6 +541,7 @@ export function AdminConsole() {
         eventId,
         name: String(manifest.name ?? eventId),
         version: String(manifest.version),
+        sdkVersion,
         entry,
         fileCount: files.length,
         status: "ready",
@@ -556,8 +560,8 @@ export function AdminConsole() {
       entry: "index.html",
       sdkVersion: 1,
     }, null, 2));
-    zip.file("index.html", `<!doctype html>\n<html lang="zh-CN">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>${config.name}</title>\n  <link rel="stylesheet" href="assets/theme.css">\n</head>\n<body>\n  <main><p>ACTIVITY PACKAGE</p><h1>${config.name}</h1><p>这里替换为独立节日页面。</p></main>\n</body>\n</html>`);
-    zip.file("assets/theme.css", "body{margin:0;min-height:100vh;display:grid;place-items:center;background:#111018;color:#f7d889;font-family:system-ui;text-align:center}main{padding:3rem}");
+    zip.file("index.html", `<!doctype html>\n<html lang="zh-CN">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>${config.name}</title>\n  <link rel="stylesheet" href="assets/theme.css">\n</head>\n<body>\n  <main>\n    <p>NCPA ACTIVITY PACKAGE</p>\n    <h1 id="title">${config.name}</h1>\n    <p id="progress">正在读取活动数据</p>\n    <button id="scan">打开二维码扫描器</button>\n  </main>\n  <script src="/activity-package-sdk.js"></script>\n  <script>\n    async function start() {\n      const context = await window.NCPAActivity.getContext();\n      document.querySelector('#title').textContent = context.event.name;\n      document.querySelector('#progress').textContent = context.progress.unlocked + ' / ' + context.progress.total;\n    }\n    document.querySelector('#scan').addEventListener('click', function () {\n      window.NCPAActivity.openScanner().catch(console.error);\n    });\n    start().catch(console.error);\n  </script>\n</body>\n</html>`);
+    zip.file("assets/theme.css", "body{margin:0;min-height:100vh;display:grid;place-items:center;background:#111115;color:#f5f2e8;font-family:system-ui;text-align:center}main{padding:3rem}button{border:0;border-radius:10px;padding:.8rem 1rem;background:#f0b94f;font:inherit;font-weight:700;cursor:pointer}");
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -780,6 +784,7 @@ export function AdminConsole() {
                     <div><dt>活动名称</dt><dd>{packageInspection.name}</dd></div>
                     <div><dt>活动编号</dt><dd>{packageInspection.eventId}</dd></div>
                     <div><dt>版本</dt><dd>{packageInspection.version}</dd></div>
+                    <div><dt>SDK版本</dt><dd>{packageInspection.sdkVersion}</dd></div>
                     <div><dt>入口页面</dt><dd>{packageInspection.entry}</dd></div>
                     <div><dt>文件数量</dt><dd>{packageInspection.fileCount}</dd></div>
                   </dl>
