@@ -41,16 +41,13 @@ export type UnlockState = {
   unlocked: Record<string, UnlockRecord>;
 };
 
-export const CONFIG_STORAGE_KEY = "festival-demo-config:v1";
-export const CONFIG_CHANGED_EVENT = "festival-demo-config-changed";
-
 export const defaultFestivalConfig: FestivalConfig = {
   eventId: "123",
   name: "展示活动",
   eyebrow: "NCPA",
   subtitle: "用于测试二维码识别和本地成就解锁。",
   dateLabel: "测试模式",
-  status: "active",
+  status: "closed",
   categories: [
     {
       id: "demo-achievements",
@@ -133,23 +130,6 @@ export function getUnlockStorageKey(eventId: string) {
   return `festivalAchievements:${eventId}`;
 }
 
-export function loadFestivalConfig(): FestivalConfig {
-  if (typeof window === "undefined") return defaultFestivalConfig;
-
-  try {
-    const saved = window.localStorage.getItem(CONFIG_STORAGE_KEY);
-    if (!saved) return defaultFestivalConfig;
-    return { ...defaultFestivalConfig, ...JSON.parse(saved) } as FestivalConfig;
-  } catch {
-    return defaultFestivalConfig;
-  }
-}
-
-export function saveFestivalConfig(config: FestivalConfig) {
-  window.localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
-  window.dispatchEvent(new CustomEvent(CONFIG_CHANGED_EVENT));
-}
-
 export function loadUnlockState(eventId: string): UnlockState {
   if (typeof window === "undefined") return { version: 1, unlocked: {} };
 
@@ -164,12 +144,4 @@ export function loadUnlockState(eventId: string): UnlockState {
 
 export function saveUnlockState(eventId: string, state: UnlockState) {
   window.localStorage.setItem(getUnlockStorageKey(eventId), JSON.stringify(state));
-}
-
-export function resetDemoData() {
-  window.localStorage.removeItem(CONFIG_STORAGE_KEY);
-  Object.keys(window.localStorage)
-    .filter((key) => key.startsWith("festivalAchievements:"))
-    .forEach((key) => window.localStorage.removeItem(key));
-  window.dispatchEvent(new CustomEvent(CONFIG_CHANGED_EVENT));
 }

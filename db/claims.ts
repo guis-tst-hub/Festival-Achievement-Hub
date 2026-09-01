@@ -1,416 +1,136 @@
-import { env } from "cloudflare:workers";
-import { defaultFestivalConfig, type FestivalConfig } from "../app/lib/demo-store";
+import { getSql } from "./index";
+import type { FestivalConfig } from "../app/lib/demo-store";
+import { festivalConfigSchema, newFestivalSchema } from "../app/lib/validation";
 
-export type ClaimRuleStat = {
-  achievementId: string;
-  claimCode: string;
-  claimedCount: number;
-  maxClaims: number;
-  enabled: boolean;
-};
-
-export type FestivalSummary = {
-  eventId: string;
-  name: string;
-  eyebrow: string;
-  subtitle: string;
-  dateLabel: string;
-  status: FestivalConfig["status"];
-  updatedAt: string;
-};
-
-export type NewFestivalInput = {
-  eventId: string;
-  name: string;
-  eyebrow: string;
-  subtitle: string;
-  dateLabel: string;
-};
-
+export type ClaimRuleStat = { achievementId: string; claimCode: string; claimedCount: number; maxClaims: number; enabled: boolean };
+export type FestivalSummary = { eventId: string; name: string; eyebrow: string; subtitle: string; dateLabel: string; status: FestivalConfig["status"]; updatedAt: string };
+export type NewFestivalInput = { eventId: string; name: string; eyebrow: string; subtitle: string; dateLabel: string };
 export class FestivalAlreadyExistsError extends Error {}
-
 export type OnlineClaimResult = {
   status: "claimed" | "already" | "event_closed" | "achievement_disabled" | "limit_reached" | "not_found";
-  achievement?: {
-    id: string;
-    name: string;
-    description: string;
-    icon: string;
-  };
-  claimedCount?: number;
-  maxClaims?: number;
+  achievement?: { id: string; name: string; description: string; icon: string };
+  claimedCount?: number; maxClaims?: number;
 };
 
-let schemaReady: Promise<void> | null = null;
-
-function getD1() {
-  if (!env.DB) throw new Error("D1 binding `DB` is unavailable");
-  return env.DB;
-}
-
-export async function ensureClaimSchema() {
-  if (schemaReady) return schemaReady;
-  const db = getD1();
-  schemaReady = db.batch([
-    db.prepare(`CREATE TABLE IF NOT EXISTS claim_events (
-      event_id TEXT PRIMARY KEY NOT NULL,
-      status TEXT NOT NULL DEFAULT 'closed',
-      config_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS claim_rules (
-      event_id TEXT NOT NULL,
-      achievement_id TEXT NOT NULL,
-      claim_code TEXT NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL,
-      icon TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      max_claims INTEGER NOT NULL DEFAULT 100,
-      claimed_count INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (event_id, achievement_id)
-    )`),
-    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_claim_rules_event_code ON claim_rules(event_id, claim_code)"),
-    db.prepare(`CREATE TABLE IF NOT EXISTS claim_records (
-      id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-      event_id TEXT NOT NULL,
-      achievement_id TEXT NOT NULL,
-      device_hash TEXT NOT NULL,
-      claimed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`),
-    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_claim_records_unique_device ON claim_records(event_id, achievement_id, device_hash)"),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_claim_records_achievement ON claim_records(event_id, achievement_id)"),
-    db.prepare(`CREATE TRIGGER IF NOT EXISTS claim_records_guard
-      BEFORE INSERT ON claim_records
-      FOR EACH ROW
-      BEGIN
-        SELECT CASE WHEN NOT EXISTS (
-          SELECT 1 FROM claim_events WHERE event_id = NEW.event_id AND status = 'active'
-        ) THEN RAISE(ABORT, 'event_closed') END;
-        SELECT CASE WHEN NOT EXISTS (
-          SELECT 1 FROM claim_rules
-          WHERE event_id = NEW.event_id AND achievement_id = NEW.achievement_id AND enabled = 1
-        ) THEN RAISE(ABORT, 'achievement_disabled') END;
-        SELECT CASE WHEN EXISTS (
-          SELECT 1 FROM claim_rules
-          WHERE event_id = NEW.event_id AND achievement_id = NEW.achievement_id
-            AND claimed_count >= max_claims
-        ) THEN RAISE(ABORT, 'claim_limit_reached') END;
-      END`),
-    db.prepare(`CREATE TRIGGER IF NOT EXISTS claim_records_increment
-      AFTER INSERT ON claim_records
-      FOR EACH ROW
-      BEGIN
-        UPDATE claim_rules
-        SET claimed_count = claimed_count + 1, updated_at = CURRENT_TIMESTAMP
-        WHERE event_id = NEW.event_id AND achievement_id = NEW.achievement_id;
-      END`),
-  ]).then(() => undefined).catch((error) => {
-    schemaReady = null;
-    throw error;
-  });
-  return schemaReady;
-}
+type EventRow = { event_id: string; status: string; config_json: string; updated_at: string | Date };
+type RuleRow = { achievement_id: string; claim_code: string; claimed_count: number; max_claims: number; enabled: boolean };
 
 function normalizeConfig(config: FestivalConfig): FestivalConfig {
-  return {
-    ...config,
-    achievements: config.achievements.map((achievement) => ({
-      ...achievement,
-      claimLimit: Math.max(1, Math.min(100000, Math.floor(achievement.claimLimit || 100))),
-    })),
-  };
+  return festivalConfigSchema.parse(config) as FestivalConfig;
 }
 
-export async function seedDefaultFestival() {
-  await ensureClaimSchema();
-  const db = getD1();
-  const config = normalizeConfig(defaultFestivalConfig);
-  const statements = [
-    db.prepare("INSERT OR IGNORE INTO claim_events (event_id, status, config_json) VALUES (?, ?, ?)")
-      .bind(config.eventId, config.status, JSON.stringify(config)),
-    ...config.achievements.map((achievement) =>
-      db.prepare(`INSERT OR IGNORE INTO claim_rules (
-        event_id, achievement_id, claim_code, name, description, icon, enabled, max_claims
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(
-          config.eventId,
-          achievement.id,
-          achievement.claimCode,
-          achievement.name,
-          achievement.description,
-          achievement.icon,
-          achievement.enabled ? 1 : 0,
-          achievement.claimLimit,
-        ),
-    ),
-  ];
-  await db.batch(statements);
+export function toPublicFestivalConfig(config: FestivalConfig): FestivalConfig {
+  return {
+    ...config,
+    achievements: config.achievements.map((achievement) => ({ ...achievement, claimCode: "" })),
+  };
 }
 
 export async function syncFestivalConfig(input: FestivalConfig) {
-  await ensureClaimSchema();
-  const db = getD1();
+  const sql = getSql();
   const config = normalizeConfig(input);
-  const statements = [
-    db.prepare(`INSERT INTO claim_events (event_id, status, config_json, updated_at)
-      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(event_id) DO UPDATE SET
-        status = excluded.status,
-        config_json = excluded.config_json,
-        updated_at = CURRENT_TIMESTAMP`)
-      .bind(config.eventId, config.status, JSON.stringify(config)),
-    db.prepare(`UPDATE claim_rules SET enabled = 0, updated_at = CURRENT_TIMESTAMP
-      WHERE event_id = ?`)
-      .bind(config.eventId),
-    ...config.achievements.map((achievement) =>
-      db.prepare(`INSERT INTO claim_rules (
-        event_id, achievement_id, claim_code, name, description, icon, enabled, max_claims, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(event_id, achievement_id) DO UPDATE SET
-        claim_code = excluded.claim_code,
-        name = excluded.name,
-        description = excluded.description,
-        icon = excluded.icon,
-        enabled = excluded.enabled,
-        max_claims = excluded.max_claims,
-        updated_at = CURRENT_TIMESTAMP`)
-        .bind(
-          config.eventId,
-          achievement.id,
-          achievement.claimCode,
-          achievement.name,
-          achievement.description,
-          achievement.icon,
-          achievement.enabled ? 1 : 0,
-          achievement.claimLimit,
-        ),
-    ),
-  ];
-  await db.batch(statements);
+  await sql.transaction((tx) => [
+    tx`INSERT INTO claim_events (event_id, status, config_json, updated_at)
+       VALUES (${config.eventId}, ${config.status}, ${JSON.stringify(config)}, CURRENT_TIMESTAMP)
+       ON CONFLICT (event_id) DO UPDATE SET status = EXCLUDED.status, config_json = EXCLUDED.config_json, updated_at = CURRENT_TIMESTAMP`,
+    tx`UPDATE claim_rules SET enabled = false, updated_at = CURRENT_TIMESTAMP WHERE event_id = ${config.eventId}`,
+    ...config.achievements.map((item) => tx`INSERT INTO claim_rules
+      (event_id, achievement_id, claim_code, name, description, icon, enabled, max_claims, updated_at)
+      VALUES (${config.eventId}, ${item.id}, ${item.claimCode}, ${item.name}, ${item.description}, ${item.icon}, ${item.enabled}, ${item.claimLimit}, CURRENT_TIMESTAMP)
+      ON CONFLICT (event_id, achievement_id) DO UPDATE SET claim_code = EXCLUDED.claim_code, name = EXCLUDED.name,
+      description = EXCLUDED.description, icon = EXCLUDED.icon, enabled = EXCLUDED.enabled,
+      max_claims = GREATEST(EXCLUDED.max_claims, claim_rules.claimed_count), updated_at = CURRENT_TIMESTAMP`),
+  ]);
   return config;
 }
 
 export async function loadFestivalConfigFromServer(eventId: string) {
-  await ensureClaimSchema();
-  if (eventId === defaultFestivalConfig.eventId) await seedDefaultFestival();
-  const row = await getD1()
-    .prepare("SELECT config_json FROM claim_events WHERE event_id = ?")
-    .bind(eventId)
-    .first<{ config_json: string }>();
-  if (!row) return null;
-  return normalizeConfig(JSON.parse(row.config_json) as FestivalConfig);
+  const rows = await getSql()`SELECT config_json FROM claim_events WHERE event_id = ${eventId}` as { config_json: string }[];
+  return rows[0] ? normalizeConfig(JSON.parse(rows[0].config_json) as FestivalConfig) : null;
 }
 
 export async function loadActiveFestivalFromServer() {
-  await ensureClaimSchema();
-  await seedDefaultFestival();
-  const row = await getD1()
-    .prepare(`SELECT config_json FROM claim_events
-      WHERE status = 'active'
-      ORDER BY updated_at DESC, event_id ASC
-      LIMIT 1`)
-    .first<{ config_json: string }>();
-  if (!row) return null;
-  return normalizeConfig(JSON.parse(row.config_json) as FestivalConfig);
+  const rows = await getSql()`SELECT config_json FROM claim_events WHERE status = 'active' ORDER BY updated_at DESC, event_id LIMIT 1` as { config_json: string }[];
+  return rows[0] ? normalizeConfig(JSON.parse(rows[0].config_json) as FestivalConfig) : null;
 }
 
 export async function listFestivals(): Promise<FestivalSummary[]> {
-  await ensureClaimSchema();
-  await seedDefaultFestival();
-  const rows = await getD1()
-    .prepare(`SELECT event_id, status, config_json, updated_at
-      FROM claim_events ORDER BY updated_at DESC, event_id ASC`)
-    .all<{
-      event_id: string;
-      status: string;
-      config_json: string;
-      updated_at: string;
-    }>();
-
-  return rows.results.flatMap((row) => {
+  const rows = await getSql()`SELECT event_id, status, config_json, updated_at FROM claim_events ORDER BY updated_at DESC, event_id` as EventRow[];
+  return rows.flatMap((row) => {
     try {
       const config = normalizeConfig(JSON.parse(row.config_json) as FestivalConfig);
-      return [{
-        eventId: row.event_id,
-        name: config.name,
-        eyebrow: config.eyebrow,
-        subtitle: config.subtitle,
-        dateLabel: config.dateLabel,
-        status: row.status === "active" ? "active" as const : "closed" as const,
-        updatedAt: row.updated_at,
-      }];
-    } catch {
-      return [];
-    }
+      return [{ eventId: row.event_id, name: config.name, eyebrow: config.eyebrow, subtitle: config.subtitle,
+        dateLabel: config.dateLabel, status: row.status === "active" ? "active" as const : "closed" as const,
+        updatedAt: new Date(row.updated_at).toISOString() }];
+    } catch { return []; }
   });
 }
 
 export async function createFestival(input: NewFestivalInput): Promise<FestivalConfig> {
-  await ensureClaimSchema();
-  const eventId = input.eventId.trim().toLowerCase();
-  const name = input.name.trim();
-  const eyebrow = input.eyebrow.trim();
-  const subtitle = input.subtitle.trim();
-  const dateLabel = input.dateLabel.trim();
-
-  if (!/^[a-z0-9][a-z0-9-]{2,63}$/.test(eventId)) {
-    throw new TypeError("活动编号必须为3到64位小写字母、数字或连字符");
-  }
-  if (!name || name.length > 80) throw new TypeError("活动名称必须为1到80个字符");
-  if (!eyebrow || eyebrow.length > 80) throw new TypeError("活动标记必须为1到80个字符");
-  if (!subtitle || subtitle.length > 240) throw new TypeError("活动说明必须为1到240个字符");
-  if (!dateLabel || dateLabel.length > 80) throw new TypeError("活动时间必须为1到80个字符");
-
-  const config: FestivalConfig = {
-    eventId,
-    name,
-    eyebrow,
-    subtitle,
-    dateLabel,
-    status: "closed",
-    categories: [],
-    achievements: [],
-  };
-
-  try {
-    await getD1()
-      .prepare(`INSERT INTO claim_events (event_id, status, config_json, updated_at)
-        VALUES (?, 'closed', ?, CURRENT_TIMESTAMP)`)
-      .bind(eventId, JSON.stringify(config))
-      .run();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("UNIQUE") || message.includes("constraint")) {
-      throw new FestivalAlreadyExistsError("这个活动编号已经存在");
-    }
-    throw error;
-  }
-
+  const parsed = newFestivalSchema.parse(input);
+  const eventId = parsed.eventId.toLowerCase();
+  const { name, eyebrow, subtitle, dateLabel } = parsed;
+  const config: FestivalConfig = { eventId, name, eyebrow, subtitle, dateLabel, status: "closed", categories: [], achievements: [] };
+  const rows = await getSql()`INSERT INTO claim_events (event_id, status, config_json)
+    VALUES (${eventId}, 'closed', ${JSON.stringify(config)}) ON CONFLICT (event_id) DO NOTHING RETURNING event_id`;
+  if (rows.length === 0) throw new FestivalAlreadyExistsError("这个活动编号已经存在");
   return config;
 }
 
 export async function getClaimStats(eventId: string): Promise<ClaimRuleStat[]> {
-  await ensureClaimSchema();
-  if (eventId === defaultFestivalConfig.eventId) await seedDefaultFestival();
-  const rows = await getD1()
-    .prepare(`SELECT achievement_id, claim_code, claimed_count, max_claims, enabled
-      FROM claim_rules WHERE event_id = ? ORDER BY achievement_id`)
-    .bind(eventId)
-    .all<{
-      achievement_id: string;
-      claim_code: string;
-      claimed_count: number;
-      max_claims: number;
-      enabled: number;
-    }>();
-  return rows.results.map((row) => ({
-    achievementId: row.achievement_id,
-    claimCode: row.claim_code,
-    claimedCount: row.claimed_count,
-    maxClaims: row.max_claims,
-    enabled: Boolean(row.enabled),
-  }));
+  const rows = await getSql()`SELECT achievement_id, claim_code, claimed_count, max_claims, enabled
+    FROM claim_rules WHERE event_id = ${eventId} ORDER BY achievement_id` as RuleRow[];
+  return rows.map((row) => ({ achievementId: row.achievement_id, claimCode: row.claim_code,
+    claimedCount: row.claimed_count, maxClaims: row.max_claims, enabled: row.enabled }));
 }
 
 async function hashDeviceId(eventId: string, deviceId: string) {
-  const bytes = new TextEncoder().encode(`${eventId}:${deviceId}`);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${eventId}:${deviceId}`));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export async function claimOnline(eventId: string, claimCode: string, deviceId: string): Promise<OnlineClaimResult> {
-  await ensureClaimSchema();
-  if (eventId === defaultFestivalConfig.eventId) await seedDefaultFestival();
-  const db = getD1();
-  const rule = await db.prepare(`SELECT
-      r.achievement_id, r.name, r.description, r.icon, r.enabled,
-      r.max_claims, r.claimed_count, e.status AS event_status
-    FROM claim_rules r
-    JOIN claim_events e ON e.event_id = r.event_id
-    WHERE r.event_id = ? AND r.claim_code = ?`)
-    .bind(eventId, claimCode)
-    .first<{
-      achievement_id: string;
-      name: string;
-      description: string;
-      icon: string;
-      enabled: number;
-      max_claims: number;
-      claimed_count: number;
-      event_status: string;
-    }>();
-
-  if (!rule) return { status: "not_found" };
-  const achievement = {
-    id: rule.achievement_id,
-    name: rule.name,
-    description: rule.description,
-    icon: rule.icon,
-  };
   const deviceHash = await hashDeviceId(eventId, deviceId);
-  const existing = await db.prepare(`SELECT id FROM claim_records
-      WHERE event_id = ? AND achievement_id = ? AND device_hash = ?`)
-    .bind(eventId, rule.achievement_id, deviceHash)
-    .first();
-  if (existing) {
-    return {
-      status: "already",
-      achievement,
-      claimedCount: rule.claimed_count,
-      maxClaims: rule.max_claims,
-    };
-  }
-  if (rule.event_status !== "active") return { status: "event_closed", achievement };
-  if (!rule.enabled) return { status: "achievement_disabled", achievement };
-  if (rule.claimed_count >= rule.max_claims) {
-    return {
-      status: "limit_reached",
-      achievement,
-      claimedCount: rule.claimed_count,
-      maxClaims: rule.max_claims,
-    };
-  }
+  const rows = await getSql()`SELECT * FROM claim_achievement(${eventId}, ${claimCode}, ${deviceHash})` as Array<{
+    result_status: OnlineClaimResult["status"]; achievement_id: string | null; achievement_name: string | null;
+    achievement_description: string | null; achievement_icon: string | null;
+    result_claimed_count: number | null; result_max_claims: number | null;
+  }>;
+  const row = rows[0];
+  if (!row || row.result_status === "not_found") return { status: "not_found" };
+  return { status: row.result_status, achievement: { id: row.achievement_id!, name: row.achievement_name!,
+    description: row.achievement_description!, icon: row.achievement_icon! },
+    ...(row.result_claimed_count == null ? {} : { claimedCount: row.result_claimed_count }),
+    ...(row.result_max_claims == null ? {} : { maxClaims: row.result_max_claims }) };
+}
 
-  try {
-    await db.prepare(`INSERT INTO claim_records (event_id, achievement_id, device_hash)
-      VALUES (?, ?, ?)`)
-      .bind(eventId, rule.achievement_id, deviceHash)
-      .run();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("UNIQUE")) {
-      return { status: "already", achievement, claimedCount: rule.claimed_count, maxClaims: rule.max_claims };
-    }
-    if (message.includes("claim_limit_reached")) {
-      return { status: "limit_reached", achievement, claimedCount: rule.max_claims, maxClaims: rule.max_claims };
-    }
-    if (message.includes("event_closed")) return { status: "event_closed", achievement };
-    if (message.includes("achievement_disabled")) return { status: "achievement_disabled", achievement };
-    throw error;
-  }
-
-  const updated = await db.prepare(`SELECT claimed_count, max_claims FROM claim_rules
-      WHERE event_id = ? AND achievement_id = ?`)
-    .bind(eventId, rule.achievement_id)
-    .first<{ claimed_count: number; max_claims: number }>();
-  return {
-    status: "claimed",
-    achievement,
-    claimedCount: updated?.claimed_count ?? rule.claimed_count + 1,
-    maxClaims: updated?.max_claims ?? rule.max_claims,
-  };
+export async function consumeClaimRateLimit(rateKey: string, maximum: number, windowSeconds: number) {
+  const rows = await getSql()`INSERT INTO claim_rate_limits (rate_key, window_started_at, attempt_count)
+    VALUES (${rateKey}, CURRENT_TIMESTAMP, 1)
+    ON CONFLICT (rate_key) DO UPDATE SET
+      window_started_at = CASE
+        WHEN claim_rate_limits.window_started_at <= CURRENT_TIMESTAMP - make_interval(secs => ${windowSeconds}) THEN CURRENT_TIMESTAMP
+        ELSE claim_rate_limits.window_started_at END,
+      attempt_count = CASE
+        WHEN claim_rate_limits.window_started_at <= CURRENT_TIMESTAMP - make_interval(secs => ${windowSeconds}) THEN 1
+        ELSE claim_rate_limits.attempt_count + 1 END
+    RETURNING attempt_count` as { attempt_count: number }[];
+  return (rows[0]?.attempt_count ?? maximum + 1) <= maximum;
 }
 
 export async function resetClaimCount(eventId: string, achievementId: string) {
-  await ensureClaimSchema();
-  const db = getD1();
-  await db.batch([
-    db.prepare("DELETE FROM claim_records WHERE event_id = ? AND achievement_id = ?")
-      .bind(eventId, achievementId),
-    db.prepare(`UPDATE claim_rules SET claimed_count = 0, updated_at = CURRENT_TIMESTAMP
-      WHERE event_id = ? AND achievement_id = ?`)
-      .bind(eventId, achievementId),
+  const sql = getSql();
+  await sql.transaction((tx) => [
+    tx`DELETE FROM claim_records WHERE event_id = ${eventId} AND achievement_id = ${achievementId}`,
+    tx`UPDATE claim_rules AS rule SET
+      claimed_count = 0,
+      max_claims = COALESCE((
+        SELECT (achievement.value->>'claimLimit')::integer
+        FROM claim_events AS event
+        CROSS JOIN LATERAL jsonb_array_elements(event.config_json::jsonb->'achievements') AS achievement(value)
+        WHERE event.event_id = ${eventId} AND achievement.value->>'id' = ${achievementId}
+      ), rule.max_claims),
+      updated_at = CURRENT_TIMESTAMP
+      WHERE rule.event_id = ${eventId} AND rule.achievement_id = ${achievementId}`,
   ]);
 }

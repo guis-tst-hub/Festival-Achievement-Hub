@@ -1,18 +1,17 @@
-import { loadActiveFestivalFromServer, loadFestivalConfigFromServer } from "../../../db/claims";
+import { apiError } from "../../lib/server-http";
+import { loadActiveFestivalFromServer, loadFestivalConfigFromServer, toPublicFestivalConfig } from "../../../db/claims";
 
 export async function GET(request: Request) {
   try {
     const eventId = new URL(request.url).searchParams.get("eventId")?.trim() ?? "";
-    const config = eventId
-      ? await loadFestivalConfigFromServer(eventId)
-      : await loadActiveFestivalFromServer();
-    if (!eventId && !config) return Response.json({ config: null });
+    if (eventId && !/^[a-z0-9][a-z0-9-]{2,63}$/.test(eventId)) {
+      return Response.json({ error: "invalid eventId" }, { status: 400 });
+    }
+    const config = eventId ? await loadFestivalConfigFromServer(eventId) : await loadActiveFestivalFromServer();
+    if (!eventId && !config) return Response.json({ config: null }, { headers: { "Cache-Control": "no-store" } });
     if (!config) return Response.json({ error: "event not found" }, { status: 404 });
-    return Response.json({ config });
+    return Response.json({ config: toPublicFestivalConfig(config) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "festival lookup failed" },
-      { status: 500 },
-    );
+    return apiError(error, "festival lookup failed");
   }
 }

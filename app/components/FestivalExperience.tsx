@@ -5,24 +5,14 @@ import {
   ArrowRight,
   Camera,
   Check,
-  Download,
-  FlaskConical,
   LockKeyhole,
   QrCode,
-  RotateCcw,
   X,
 } from "lucide-react";
 import jsQR from "jsqr";
-import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AchievementIconGraphic } from "./AchievementIconGraphic";
 import {
-  createActivityPackageContext,
-  isActivityPackageRequest,
-  type ActivityPackageResponse,
-} from "../lib/activity-package-api";
-import {
-  CONFIG_CHANGED_EVENT,
   FestivalAchievement,
   FestivalConfig,
   UnlockState,
@@ -49,8 +39,6 @@ type OnlineClaimResponse = {
 
 type ScannerStatus = "starting" | "scanning" | "verifying" | "unavailable" | "error";
 
-const DEVICE_STORAGE_KEY = "festival-anonymous-device:v1";
-
 const inactiveFestivalConfig: FestivalConfig = {
   eventId: "",
   name: "",
@@ -62,29 +50,11 @@ const inactiveFestivalConfig: FestivalConfig = {
   achievements: [],
 };
 
-function getOrCreateDeviceId() {
-  const saved = window.localStorage.getItem(DEVICE_STORAGE_KEY);
-  if (saved) return saved;
-  const created = crypto.randomUUID();
-  window.localStorage.setItem(DEVICE_STORAGE_KEY, created);
-  return created;
-}
-
-function buildClaimUrl(origin: string, eventId: string, claimCode: string) {
-  const url = new URL(origin);
-  url.searchParams.set("event", eventId);
-  url.searchParams.set("unlock", claimCode);
-  return url.toString();
-}
-
 export function FestivalExperience() {
   const [config, setConfig] = useState<FestivalConfig>(inactiveFestivalConfig);
   const [unlockState, setUnlockState] = useState<UnlockState>({ version: 1, unlocked: {} });
   const [hydrated, setHydrated] = useState(false);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
-  const [sampleQr, setSampleQr] = useState("");
-  const [manualCode, setManualCode] = useState("");
-  const [isClaiming, setIsClaiming] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("starting");
   const [scannerMessage, setScannerMessage] = useState("");
@@ -130,14 +100,9 @@ export function FestivalExperience() {
     const hydrationTimer = window.setTimeout(() => {
       void syncConfig();
     }, 0);
-    const handleConfigChange = () => void syncConfig();
-    window.addEventListener(CONFIG_CHANGED_EVENT, handleConfigChange);
-    window.addEventListener("storage", handleConfigChange);
     return () => {
       cancelled = true;
       window.clearTimeout(hydrationTimer);
-      window.removeEventListener(CONFIG_CHANGED_EVENT, handleConfigChange);
-      window.removeEventListener("storage", handleConfigChange);
     };
   }, []);
 
@@ -151,36 +116,18 @@ export function FestivalExperience() {
   const progress = activeAchievements.length
     ? Math.round((unlockedCount / activeAchievements.length) * 100)
     : 0;
-  const packageContext = useMemo(
-    () => createActivityPackageContext(config, unlockState),
-    [config, unlockState],
-  );
-  const sampleAchievement = activeAchievements[0];
-
-  useEffect(() => {
-    if (!hydrated || !sampleAchievement) return;
-    const claimUrl = buildClaimUrl(
-      window.location.origin,
-      config.eventId,
-      sampleAchievement.claimCode,
-    );
-    QRCode.toDataURL(claimUrl, {
-      width: 480,
-      margin: 2,
-      color: { dark: "#17131f", light: "#fff8df" },
-      errorCorrectionLevel: "M",
-    }).then(setSampleQr);
-  }, [config.eventId, hydrated, sampleAchievement]);
-
   const claimAchievement = useCallback(async (eventId: string, claimCode: string) => {
-    setIsClaiming(true);
     try {
       const response = await fetch("/api/claims", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ eventId, claimCode, deviceId: getOrCreateDeviceId() }),
+        body: JSON.stringify({ eventId, claimCode }),
       });
       const result = await response.json() as OnlineClaimResponse;
+      const isStructuredNotFound = response.status === 404 && result.status === "not_found";
+      if (!response.ok && !isStructuredNotFound) {
+        throw new Error(response.status === 429 ? "操作过于频繁，请一分钟后再试。" : "服务器暂时无法完成校验，请稍后重试。");
+      }
       const localAchievement = config.achievements.find((item) => item.claimCode === claimCode);
       const achievement = result.achievement ?? localAchievement;
 
@@ -227,8 +174,6 @@ export function FestivalExperience() {
         title: "暂时无法在线校验",
         message: error instanceof Error ? error.message : "请确认设备已连接校园网络后重试。",
       });
-    } finally {
-      setIsClaiming(false);
     }
   }, [config]);
 
@@ -294,39 +239,6 @@ export function FestivalExperience() {
     closeScanner();
     window.setTimeout(openScanner, 0);
   }
-
-  useEffect(() => {
-    const handlePackageRequest = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || !isActivityPackageRequest(event.data)) return;
-      const source = event.source as Window | null;
-      if (!source) return;
-      const reply = (response: ActivityPackageResponse) => source.postMessage(response, event.origin);
-
-      if (event.data.type === "ncpa:activity-package:get-context") {
-        reply({
-          type: "ncpa:activity-package:context",
-          requestId: event.data.requestId,
-          context: packageContext,
-        });
-        return;
-      }
-
-      if (config.status !== "active") {
-        reply({
-          type: "ncpa:activity-package:error",
-          requestId: event.data.requestId,
-          message: "当前活动未开放",
-        });
-        return;
-      }
-
-      openScanner();
-      reply({ type: "ncpa:activity-package:scanner-opened", requestId: event.data.requestId });
-    };
-
-    window.addEventListener("message", handlePackageRequest);
-    return () => window.removeEventListener("message", handlePackageRequest);
-  }, [config.status, openScanner, packageContext]);
 
   useEffect(() => {
     if (!scannerOpen) return;
@@ -422,13 +334,6 @@ export function FestivalExperience() {
       stopLiveScanner();
     };
   }, [claimFromPayload, scannerOpen, stopLiveScanner]);
-
-  function clearProgress() {
-    const empty: UnlockState = { version: 1, unlocked: {} };
-    setUnlockState(empty);
-    saveUnlockState(config.eventId, empty);
-    setClaimResult(null);
-  }
 
   return (
     <main className={`festival-stage ${config.status === "closed" ? "is-idle" : ""}`}>
@@ -569,38 +474,6 @@ export function FestivalExperience() {
           </div>
         ) : null}
       </section>
-
-      {config.status === "active" ? <details className="desktop-lab">
-        <summary><FlaskConical size={17} />本地测试工具</summary>
-        <div className="desktop-lab-body">
-          <p className="lab-intro">这里仅供电脑测试，手机访问时不会显示。</p>
-
-          <div className="manual-claim">
-            <label htmlFor="manual-code">输入识别码</label>
-            <div>
-              <input id="manual-code" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="demo-1" />
-              <button disabled={isClaiming} onClick={() => void claimFromPayload(manualCode).catch((error) => setClaimResult({ kind: "error", title: "识别码无效", message: error instanceof Error ? error.message : "识别失败" }))} aria-label="提交识别码"><ArrowRight size={17} /></button>
-            </div>
-          </div>
-
-          <div className="sample-qr-card">
-            <div className="sample-copy">
-              <span><QrCode size={16} />测试二维码</span>
-              <strong>{sampleAchievement?.name ?? "暂无成就"}</strong>
-              <small>下载后使用手机摄像头扫描。</small>
-            </div>
-            {/* The QR code is generated in-browser as a data URL, so image optimization does not apply. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            {sampleQr ? <img src={sampleQr} alt={`${sampleAchievement?.name ?? "测试"}二维码`} /> : null}
-            {sampleQr ? <a href={sampleQr} download={`${sampleAchievement?.claimCode ?? "test-qr"}.png`}><Download size={14} />下载图片</a> : null}
-          </div>
-
-          <div className="lab-actions">
-            <button onClick={clearProgress}><RotateCcw size={14} />清空解锁进度</button>
-            <a href="/admin">管理台 <ArrowRight size={14} /></a>
-          </div>
-        </div>
-      </details> : null}
     </main>
   );
 }
