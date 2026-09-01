@@ -37,9 +37,9 @@ CREATE OR REPLACE FUNCTION claim_achievement(p_event_id text, p_claim_code text,
 RETURNS TABLE(result_status text, achievement_id text, achievement_name text, achievement_description text,
   achievement_icon text, result_claimed_count integer, result_max_claims integer)
 LANGUAGE plpgsql AS $$
-DECLARE selected_rule claim_rules%ROWTYPE; event_status text;
+DECLARE selected_rule record;
 BEGIN
-  SELECT r, e.status INTO selected_rule, event_status
+  SELECT r.*, e.status AS event_status INTO selected_rule
   FROM claim_rules r JOIN claim_events e ON e.event_id = r.event_id
   WHERE r.event_id = p_event_id AND r.claim_code = p_claim_code FOR UPDATE OF r;
   IF NOT FOUND THEN RETURN QUERY SELECT 'not_found', NULL::text, NULL::text, NULL::text, NULL::text, NULL::integer, NULL::integer; RETURN; END IF;
@@ -49,7 +49,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM claim_records WHERE event_id = p_event_id AND claim_records.achievement_id = selected_rule.achievement_id AND device_hash = p_device_hash) THEN
     result_status := 'already'; RETURN NEXT; RETURN;
   END IF;
-  IF event_status <> 'active' THEN result_status := 'event_closed'; RETURN NEXT; RETURN; END IF;
+  IF selected_rule.event_status <> 'active' THEN result_status := 'event_closed'; RETURN NEXT; RETURN; END IF;
   IF NOT selected_rule.enabled THEN result_status := 'achievement_disabled'; RETURN NEXT; RETURN; END IF;
   IF selected_rule.claimed_count >= selected_rule.max_claims THEN result_status := 'limit_reached'; RETURN NEXT; RETURN; END IF;
   INSERT INTO claim_records (event_id, achievement_id, device_hash) VALUES (p_event_id, selected_rule.achievement_id, p_device_hash);
