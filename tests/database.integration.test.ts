@@ -55,6 +55,10 @@ test("database enforces concurrent, duplicate, and configured reset limits", { s
     assert.equal((await claimOnline(eventId, "integration-code", "device-after-reset-1")).status, "claimed");
     assert.equal((await claimOnline(eventId, "integration-code", "device-after-reset-2")).status, "limit_reached");
   } finally {
-    if (databaseUrl) await getSql()`DELETE FROM claim_events WHERE event_id = ${eventId}`;
+    if (databaseUrl) {
+      const sql = getSql();
+      await sql`DELETE FROM claim_events WHERE event_id = ${eventId}`;
+      await sql.end();
+    }
   }
 });

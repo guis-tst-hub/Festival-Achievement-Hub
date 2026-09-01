@@ -29,18 +29,20 @@ export function toPublicFestivalConfig(config: FestivalConfig): FestivalConfig {
 export async function syncFestivalConfig(input: FestivalConfig) {
   const sql = getSql();
   const config = normalizeConfig(input);
-  await sql.transaction((tx) => [
-    tx`INSERT INTO claim_events (event_id, status, config_json, updated_at)
+  await sql.begin(async (tx) => {
+    await tx`INSERT INTO claim_events (event_id, status, config_json, updated_at)
        VALUES (${config.eventId}, ${config.status}, ${JSON.stringify(config)}, CURRENT_TIMESTAMP)
-       ON CONFLICT (event_id) DO UPDATE SET status = EXCLUDED.status, config_json = EXCLUDED.config_json, updated_at = CURRENT_TIMESTAMP`,
-    tx`UPDATE claim_rules SET enabled = false, updated_at = CURRENT_TIMESTAMP WHERE event_id = ${config.eventId}`,
-    ...config.achievements.map((item) => tx`INSERT INTO claim_rules
-      (event_id, achievement_id, claim_code, name, description, icon, enabled, max_claims, updated_at)
-      VALUES (${config.eventId}, ${item.id}, ${item.claimCode}, ${item.name}, ${item.description}, ${item.icon}, ${item.enabled}, ${item.claimLimit}, CURRENT_TIMESTAMP)
-      ON CONFLICT (event_id, achievement_id) DO UPDATE SET claim_code = EXCLUDED.claim_code, name = EXCLUDED.name,
-      description = EXCLUDED.description, icon = EXCLUDED.icon, enabled = EXCLUDED.enabled,
-      max_claims = GREATEST(EXCLUDED.max_claims, claim_rules.claimed_count), updated_at = CURRENT_TIMESTAMP`),
-  ]);
+       ON CONFLICT (event_id) DO UPDATE SET status = EXCLUDED.status, config_json = EXCLUDED.config_json, updated_at = CURRENT_TIMESTAMP`;
+    await tx`UPDATE claim_rules SET enabled = false, updated_at = CURRENT_TIMESTAMP WHERE event_id = ${config.eventId}`;
+    for (const item of config.achievements) {
+      await tx`INSERT INTO claim_rules
+        (event_id, achievement_id, claim_code, name, description, icon, enabled, max_claims, updated_at)
+        VALUES (${config.eventId}, ${item.id}, ${item.claimCode}, ${item.name}, ${item.description}, ${item.icon}, ${item.enabled}, ${item.claimLimit}, CURRENT_TIMESTAMP)
+        ON CONFLICT (event_id, achievement_id) DO UPDATE SET claim_code = EXCLUDED.claim_code, name = EXCLUDED.name,
+        description = EXCLUDED.description, icon = EXCLUDED.icon, enabled = EXCLUDED.enabled,
+        max_claims = GREATEST(EXCLUDED.max_claims, claim_rules.claimed_count), updated_at = CURRENT_TIMESTAMP`;
+    }
+  });
   return config;
 }
 
@@ -120,9 +122,9 @@ export async function consumeClaimRateLimit(rateKey: string, maximum: number, wi
 
 export async function resetClaimCount(eventId: string, achievementId: string) {
   const sql = getSql();
-  await sql.transaction((tx) => [
-    tx`DELETE FROM claim_records WHERE event_id = ${eventId} AND achievement_id = ${achievementId}`,
-    tx`UPDATE claim_rules AS rule SET
+  await sql.begin(async (tx) => {
+    await tx`DELETE FROM claim_records WHERE event_id = ${eventId} AND achievement_id = ${achievementId}`;
+    await tx`UPDATE claim_rules AS rule SET
       claimed_count = 0,
       max_claims = COALESCE((
         SELECT (achievement.value->>'claimLimit')::integer
@@ -131,6 +133,6 @@ export async function resetClaimCount(eventId: string, achievementId: string) {
         WHERE event.event_id = ${eventId} AND achievement.value->>'id' = ${achievementId}
       ), rule.max_claims),
       updated_at = CURRENT_TIMESTAMP
-      WHERE rule.event_id = ${eventId} AND rule.achievement_id = ${achievementId}`,
-  ]);
+      WHERE rule.event_id = ${eventId} AND rule.achievement_id = ${achievementId}`;
+  });
 }
