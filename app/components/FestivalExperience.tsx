@@ -19,6 +19,7 @@ import {
   loadUnlockState,
   saveUnlockState,
 } from "../lib/demo-store";
+import { clearClaimParameters, parseClaimPayload } from "../lib/claim-link";
 
 type ClaimedAchievement = Pick<FestivalAchievement, "id" | "name" | "description" | "icon">;
 
@@ -58,6 +59,7 @@ export function FestivalExperience() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("starting");
   const [scannerMessage, setScannerMessage] = useState("");
+  const [directClaimPending, setDirectClaimPending] = useState(false);
   const processedUrl = useRef(false);
   const scannerVideo = useRef<HTMLVideoElement>(null);
   const scannerCanvas = useRef<HTMLCanvasElement>(null);
@@ -178,21 +180,8 @@ export function FestivalExperience() {
   }, [config]);
 
   const claimFromPayload = useCallback(async (payload: string) => {
-    const trimmed = payload.trim();
-    if (!trimmed) throw new Error("二维码内容为空");
-
-    try {
-      const url = new URL(trimmed, window.location.origin);
-      const claimCode = url.searchParams.get("unlock");
-      if (!claimCode) throw new Error("二维码中缺少成就识别码");
-      await claimAchievement(url.searchParams.get("event") ?? config.eventId, claimCode);
-    } catch (error) {
-      if (/^[a-z0-9_-]+$/i.test(trimmed)) {
-        await claimAchievement(config.eventId, trimmed);
-        return;
-      }
-      throw error;
-    }
+    const target = parseClaimPayload(payload, window.location.origin, config.eventId);
+    await claimAchievement(target.eventId, target.claimCode);
   }, [claimAchievement, config.eventId]);
 
   useEffect(() => {
@@ -205,11 +194,29 @@ export function FestivalExperience() {
     const params = new URLSearchParams(window.location.search);
     const claimCode = params.get("unlock");
     if (!claimCode) return;
+    const claimUrl = window.location.href;
+    let cancelled = false;
     const claimTimer = window.setTimeout(() => {
-      void claimAchievement(params.get("event") ?? config.eventId, claimCode);
+      setDirectClaimPending(true);
+      try {
+        const target = parseClaimPayload(claimUrl, window.location.origin, config.eventId);
+        void claimAchievement(target.eventId, target.claimCode).finally(() => {
+          if (!cancelled) setDirectClaimPending(false);
+        });
+      } catch (error) {
+        setDirectClaimPending(false);
+        setClaimResult({
+          kind: "error",
+          title: "无法识别此二维码",
+          message: error instanceof Error ? error.message : "二维码链接无效。",
+        });
+      }
     }, 0);
-    window.history.replaceState({}, "", window.location.pathname);
-    return () => window.clearTimeout(claimTimer);
+    window.history.replaceState({}, "", clearClaimParameters(window.location.href));
+    return () => {
+      cancelled = true;
+      window.clearTimeout(claimTimer);
+    };
   }, [claimAchievement, config.eventId, config.status, hydrated]);
 
   const stopLiveScanner = useCallback(() => {
@@ -247,7 +254,7 @@ export function FestivalExperience() {
     async function startScanner() {
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
         setScannerStatus("unavailable");
-        setScannerMessage("实时摄像头需要 HTTPS 安全连接。当前局域网 HTTP 地址无法获得浏览器摄像头权限。");
+        setScannerMessage("网页实时摄像头需要 HTTPS 安全连接。你仍可使用手机系统相机扫描打印二维码，打开链接后会自动激活成就。");
         return;
       }
 
@@ -359,9 +366,13 @@ export function FestivalExperience() {
 
             <button className="scan-entry-card" onClick={openScanner}>
               <span className="scan-entry-icon"><QrCode size={23} /></span>
-              <span className="scan-entry-copy"><strong>打开二维码扫描器</strong><span>扫描活动二维码并解锁成就</span></span>
+              <span className="scan-entry-copy"><strong>在网页中打开摄像头</strong><span>需要 HTTPS 和摄像头权限</span></span>
               <ArrowRight size={18} />
             </button>
+            <div className="direct-scan-hint">
+              <Camera size={17} />
+              <span><strong>也可以使用手机系统相机</strong>扫描墙上的二维码，打开链接后会自动激活成就，无需网页摄像头权限。</span>
+            </div>
 
             <section className="progress-card" aria-label={`已解锁${unlockedCount}个，共${activeAchievements.length}个`}>
               <div className="progress-summary">
@@ -428,7 +439,17 @@ export function FestivalExperience() {
           </div>
         )}
 
-        {claimResult ? (
+        {directClaimPending ? (
+          <div className="claim-overlay direct-claim-pending" role="status" aria-live="polite">
+            <div className="claim-seal verifying"><QrCode size={34} /></div>
+            <span className="claim-kicker">直链激活</span>
+            <h2>正在验证二维码</h2>
+            <p>正在检查活动和领取资格，请稍候。</p>
+            <span className="spinner" aria-hidden="true" />
+          </div>
+        ) : null}
+
+        {claimResult && !directClaimPending ? (
           <div className="claim-overlay" role="dialog" aria-modal="true" aria-label={claimResult.title}>
             <button className="overlay-close" onClick={() => setClaimResult(null)} aria-label="关闭提示"><X size={20} /></button>
             <div className={`claim-seal ${claimResult.kind}`}>

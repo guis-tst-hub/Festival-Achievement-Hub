@@ -206,6 +206,29 @@ a {
   color: rgba(23, 19, 24, 0.55);
 }
 
+.direct-scan-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 3px 18px;
+  color: #817b87;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.direct-scan-hint svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--amber);
+}
+
+.direct-scan-hint strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #bdb6c1;
+  font-size: 10px;
+}
+
 .progress-card {
   margin: 0 0 30px;
   border: 1px solid var(--line);
@@ -518,6 +541,17 @@ a {
   overflow-y: auto;
   padding: 24px 20px;
   background: #111115;
+}
+
+.direct-claim-pending .claim-seal.verifying {
+  color: var(--amber);
+  background: rgba(241, 184, 74, 0.1);
+}
+
+.direct-claim-pending > .spinner {
+  width: 24px;
+  height: 24px;
+  margin-top: 8px;
 }
 
 .scanner-header {

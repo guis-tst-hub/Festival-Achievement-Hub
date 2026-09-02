@@ -29,8 +29,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# local environment files and secrets
+.env
+.env.*
+!.env.example
 
 # vercel
 .vercel
@@ -53,4 +55,3 @@ yarn-error.log*
 *.sqlite
 *.sqlite3
 *.tsbuildinfo
-!.env.example
