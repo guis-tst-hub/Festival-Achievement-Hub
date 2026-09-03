@@ -46,6 +46,7 @@ yarn-error.log*
 /data/
 /uploads/
 /activity-packages/
+/deploy/certs/
 
 # local database files and TypeScript cache
 *.db

@@ -52,6 +52,8 @@ docker compose down -v       # 会永久删除数据库，请谨慎
 
 完整备份、恢复、监控和回滚步骤见 [`docs/operations.md`](docs/operations.md)。
 
+学校本地服务器通过 GitHub Actions、GHCR和生产 Compose发布的完整流程见 [`docs/school-server-deployment.md`](docs/school-server-deployment.md)。
+
 ## 不使用 Docker 的本地运行
 
 需要 Node.js 22 和 PostgreSQL 14+：

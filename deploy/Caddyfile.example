@@ -1,0 +1,15 @@
+# Replace this hostname with the DNS name assigned by school IT.
+festival.example.edu {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:3000
+
+  header {
+    -Server
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+  }
+}
+
+# If the server is not reachable from the public internet, automatic ACME
+# validation may fail. Ask school IT for a trusted certificate, then add:
+# tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
