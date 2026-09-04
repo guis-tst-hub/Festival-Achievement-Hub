@@ -22,10 +22,35 @@ export async function readJson(request: Request, maxBytes = 512 * 1024): Promise
   }
 }
 
+function firstForwardedValue(value: string | null) {
+  const first = value?.split(",", 1)[0]?.trim();
+  return first || undefined;
+}
+
+function getExpectedOrigin(request: Request) {
+  const requestUrl = new URL(request.url);
+  if (process.env.TRUST_PROXY_HEADERS !== "true") {
+    return requestUrl.origin;
+  }
+
+  const protocol = firstForwardedValue(request.headers.get("x-forwarded-proto")) ?? requestUrl.protocol.slice(0, -1);
+  const host = firstForwardedValue(request.headers.get("x-forwarded-host")) ?? request.headers.get("host")?.trim() ?? requestUrl.host;
+
+  if ((protocol !== "http" && protocol !== "https") || !host || /[\s/?#@]/.test(host)) {
+    throw new HttpError(403, "invalid reverse proxy headers");
+  }
+
+  try {
+    return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    throw new HttpError(403, "invalid reverse proxy headers");
+  }
+}
+
 export function requireSameOrigin(request: Request) {
   const origin = request.headers.get("origin");
   const site = request.headers.get("sec-fetch-site");
-  if ((origin && origin !== new URL(request.url).origin) || site === "cross-site") {
+  if ((origin && origin !== getExpectedOrigin(request)) || site === "cross-site") {
     throw new HttpError(403, "cross-origin request rejected");
   }
 }

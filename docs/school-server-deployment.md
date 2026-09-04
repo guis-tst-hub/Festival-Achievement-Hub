@@ -98,7 +98,9 @@ Keep application port 3000 bound to loopback and do not publish PostgreSQL port 
 
 If the server is internal-only, public HTTP ACME validation may fail. Use a certificate supplied by school IT, DNS-based ACME validation, or another certificate chain trusted by every participating phone. `tls internal` and self-signed certificates are unsuitable for unmanaged student phones unless their trust stores are provisioned.
 
-The reverse proxy must preserve the original `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto` values. Test this before setting claim rate limits because many users appearing under one address can cause false 429 responses.
+The reverse proxy must set the original `Host`/`X-Forwarded-Host`, `X-Forwarded-For`, and `X-Forwarded-Proto` values. The production Compose file explicitly enables trusted proxy headers so that HTTPS admin requests are compared against the browser-facing origin instead of the container's internal HTTP address. This is safe only while port 3000 remains bound to `127.0.0.1` and the proxy overwrites those headers; never expose port 3000 directly with this setting enabled.
+
+Caddy sets these standard forwarded headers for `reverse_proxy` automatically. If Nginx is used instead, configure it to overwrite them rather than accepting client-supplied values. Test the client IP before setting claim rate limits because many users appearing under one address can cause false 429 responses.
 
 ## 6. Backup before every update
 

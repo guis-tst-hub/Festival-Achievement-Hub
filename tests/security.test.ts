@@ -4,6 +4,7 @@ import { getClaimIdentity } from "../app/lib/claim-identity";
 import { festivalConfigSchema } from "../app/lib/validation";
 import { defaultFestivalConfig } from "../app/lib/demo-store";
 import { toPublicFestivalConfig } from "../db/claims";
+import { HttpError, requireSameOrigin } from "../app/lib/server-http";
 
 test("public festival configuration does not expose claim codes", () => {
   const publicConfig = toPublicFestivalConfig(defaultFestivalConfig);
@@ -28,4 +29,84 @@ test("claim identity is server-signed and stable", async () => {
   const second = await getClaimIdentity(new Request("https://example.test/api/claims", { headers: { cookie } }));
   assert.equal(second.deviceId, first.deviceId);
   assert.equal(second.setCookie, undefined);
+});
+
+test("same-origin protection accepts a matching direct request", () => {
+  const request = new Request("http://127.0.0.1:3000/api/admin/festivals", {
+    headers: {
+      origin: "http://127.0.0.1:3000",
+      "sec-fetch-site": "same-origin",
+    },
+  });
+
+  assert.doesNotThrow(() => requireSameOrigin(request));
+});
+
+test("forwarded origin is trusted only when the reverse-proxy boundary is enabled", () => {
+  const previous = process.env.TRUST_PROXY_HEADERS;
+  const request = new Request("http://app:3000/api/admin/festivals", {
+    headers: {
+      host: "app:3000",
+      origin: "https://festival.example.edu",
+      "sec-fetch-site": "same-origin",
+      "x-forwarded-host": "festival.example.edu",
+      "x-forwarded-proto": "https",
+    },
+  });
+
+  try {
+    delete process.env.TRUST_PROXY_HEADERS;
+    assert.throws(
+      () => requireSameOrigin(request),
+      (error: unknown) => error instanceof HttpError && error.status === 403,
+    );
+
+    process.env.TRUST_PROXY_HEADERS = "true";
+    assert.doesNotThrow(() => requireSameOrigin(request));
+  } finally {
+    if (previous === undefined) {
+      delete process.env.TRUST_PROXY_HEADERS;
+    } else {
+      process.env.TRUST_PROXY_HEADERS = previous;
+    }
+  }
+});
+
+test("trusted proxy mode still rejects cross-site and malformed forwarded requests", () => {
+  const previous = process.env.TRUST_PROXY_HEADERS;
+  process.env.TRUST_PROXY_HEADERS = "true";
+
+  try {
+    const crossSite = new Request("http://app:3000/api/admin/festivals", {
+      headers: {
+        origin: "https://festival.example.edu",
+        "sec-fetch-site": "cross-site",
+        "x-forwarded-host": "festival.example.edu",
+        "x-forwarded-proto": "https",
+      },
+    });
+    const malformed = new Request("http://app:3000/api/admin/festivals", {
+      headers: {
+        origin: "https://festival.example.edu",
+        "sec-fetch-site": "same-origin",
+        "x-forwarded-host": "festival.example.edu",
+        "x-forwarded-proto": "javascript",
+      },
+    });
+
+    assert.throws(
+      () => requireSameOrigin(crossSite),
+      (error: unknown) => error instanceof HttpError && error.status === 403,
+    );
+    assert.throws(
+      () => requireSameOrigin(malformed),
+      (error: unknown) => error instanceof HttpError && error.status === 403,
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.TRUST_PROXY_HEADERS;
+    } else {
+      process.env.TRUST_PROXY_HEADERS = previous;
+    }
+  }
 });
