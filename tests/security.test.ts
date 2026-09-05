@@ -21,14 +21,53 @@ test("festival validation rejects duplicate claim codes and unknown categories",
 });
 
 test("claim identity is server-signed and stable", async () => {
+  const previousSecret = process.env.CLAIM_DEVICE_SECRET;
+  const previousProxy = process.env.TRUST_PROXY_HEADERS;
   process.env.CLAIM_DEVICE_SECRET = "test-secret-that-is-at-least-thirty-two-characters";
-  const first = await getClaimIdentity(new Request("https://example.test/api/claims"));
-  assert.ok(first.setCookie?.includes("HttpOnly"));
-  assert.ok(first.setCookie?.includes("Secure"));
-  const cookie = first.setCookie!.split(";")[0];
-  const second = await getClaimIdentity(new Request("https://example.test/api/claims", { headers: { cookie } }));
-  assert.equal(second.deviceId, first.deviceId);
-  assert.equal(second.setCookie, undefined);
+  delete process.env.TRUST_PROXY_HEADERS;
+  try {
+    const first = await getClaimIdentity(new Request("https://example.test/api/claims"));
+    assert.ok(first.setCookie?.includes("HttpOnly"));
+    assert.ok(first.setCookie?.includes("Secure"));
+    const cookie = first.setCookie!.split(";")[0];
+    const second = await getClaimIdentity(new Request("https://example.test/api/claims", { headers: { cookie } }));
+    assert.equal(second.deviceId, first.deviceId);
+    assert.equal(second.setCookie, undefined);
+  } finally {
+    if (previousSecret === undefined) delete process.env.CLAIM_DEVICE_SECRET;
+    else process.env.CLAIM_DEVICE_SECRET = previousSecret;
+    if (previousProxy === undefined) delete process.env.TRUST_PROXY_HEADERS;
+    else process.env.TRUST_PROXY_HEADERS = previousProxy;
+  }
+});
+
+test("client address headers are used only behind a trusted proxy", async () => {
+  const previousSecret = process.env.CLAIM_DEVICE_SECRET;
+  const previousProxy = process.env.TRUST_PROXY_HEADERS;
+  process.env.CLAIM_DEVICE_SECRET = "test-secret-that-is-at-least-thirty-two-characters";
+  const request = new Request("http://app:3000/api/claims", {
+    headers: {
+      "x-forwarded-for": "192.0.2.10, 192.0.2.20",
+      "x-forwarded-proto": "https",
+    },
+  });
+
+  try {
+    delete process.env.TRUST_PROXY_HEADERS;
+    const direct = await getClaimIdentity(request);
+    assert.equal(direct.addressRateKey, undefined);
+    assert.ok(!direct.setCookie?.includes("; Secure"));
+
+    process.env.TRUST_PROXY_HEADERS = "true";
+    const proxied = await getClaimIdentity(request);
+    assert.ok(proxied.addressRateKey);
+    assert.ok(proxied.setCookie?.includes("; Secure"));
+  } finally {
+    if (previousSecret === undefined) delete process.env.CLAIM_DEVICE_SECRET;
+    else process.env.CLAIM_DEVICE_SECRET = previousSecret;
+    if (previousProxy === undefined) delete process.env.TRUST_PROXY_HEADERS;
+    else process.env.TRUST_PROXY_HEADERS = previousProxy;
+  }
 });
 
 test("same-origin protection accepts a matching direct request", () => {

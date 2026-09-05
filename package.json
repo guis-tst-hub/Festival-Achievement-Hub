@@ -12,6 +12,7 @@
     "test": "npm run build && npm run test:unit && npm run test:smoke",
     "test:unit": "tsx --test tests/*.test.ts",
     "test:smoke": "node --test tests/rendered-html.test.mjs",
+    "check:deployment": "sh -n deploy/update-compose.sh && node --check scripts/load-smoke.mjs && docker compose --env-file deploy/school-test.env.example -f compose.production.yaml config --quiet",
     "audit:production": "npm audit --omit=dev --audit-level=high",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",

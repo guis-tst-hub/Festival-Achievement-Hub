@@ -49,7 +49,8 @@ Also back up the Compose configuration and secrets securely. Test restoration qu
 ## Capacity and retention
 
 - Load-test expected peak claim traffic against staging before large events.
-- Tune `DATABASE_POOL_MAX` so all app instances together stay below PostgreSQL's connection limit.
+- One application container with `DATABASE_POOL_MAX=20` is sufficient for the expected audience of roughly 500 people with light, intermittent activity. Load-test before the event if usage becomes write-heavy or truly simultaneous.
+- Keep the sum of `DATABASE_POOL_MAX` across all app instances below PostgreSQL's connection limit.
 - Watch the disk used by the `postgres_data` volume.
 - Periodically remove expired rate-limit rows:
 

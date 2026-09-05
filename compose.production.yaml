@@ -4,6 +4,8 @@ services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
+    stop_grace_period: 30s
+    shm_size: 256mb
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-festival_hub}
       POSTGRES_USER: ${POSTGRES_USER:-festival_hub}
@@ -17,13 +19,22 @@ services:
       retries: 10
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
       - backend
 
   app:
     image: ${APP_IMAGE:?Set APP_IMAGE in .env}
-    pull_policy: always
+    # Updates explicitly run `docker compose pull app`; avoiding `always`
+    # prevents Compose from downloading the same image twice per deployment.
+    pull_policy: missing
     restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
     depends_on:
       db:
         condition: service_healthy
@@ -33,23 +44,35 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       CLAIM_DEVICE_SECRET: ${CLAIM_DEVICE_SECRET:?Set CLAIM_DEVICE_SECRET in .env}
-      # Safe only because port 3000 is bound to loopback and the reverse proxy
-      # is the sole public entry point.
-      TRUST_PROXY_HEADERS: "true"
+      # Enable only when a trusted reverse proxy is the sole entry point.
+      TRUST_PROXY_HEADERS: "${TRUST_PROXY_HEADERS:-false}"
     ports:
-      - "127.0.0.1:${APP_PORT:-3000}:3000"
+      # Keep 127.0.0.1 behind a reverse proxy. Use 0.0.0.0 only for an
+      # intentionally LAN-accessible HTTP deployment protected by a firewall.
+      - "${SERVER_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 45s
+      start_interval: 2s
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
+      # A normal bridge is required for published host ports. PostgreSQL stays
+      # reachable only through the separate internal backend network.
+      - frontend
       - backend
 
 networks:
+  frontend:
+    driver: bridge
   backend:
     internal: true
 

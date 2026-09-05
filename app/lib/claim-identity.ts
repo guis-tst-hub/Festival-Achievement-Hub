@@ -25,6 +25,20 @@ function readCookie(request: Request) {
   return entry ? decodeURIComponent(entry.slice(COOKIE_NAME.length + 1)) : "";
 }
 
+function firstForwardedValue(value: string | null) {
+  const first = value?.split(",", 1)[0]?.trim();
+  return first || undefined;
+}
+
+function trustsProxyHeaders() {
+  return process.env.TRUST_PROXY_HEADERS === "true";
+}
+
+function isSecureRequest(request: Request) {
+  if (new URL(request.url).protocol === "https:") return true;
+  return trustsProxyHeaders() && firstForwardedValue(request.headers.get("x-forwarded-proto")) === "https";
+}
+
 export async function getClaimIdentity(request: Request) {
   const current = readCookie(request);
   const separator = current.lastIndexOf(".");
@@ -36,11 +50,20 @@ export async function getClaimIdentity(request: Request) {
   if (!DEVICE_PATTERN.test(id) || signature !== await hmac(id)) {
     deviceId = crypto.randomUUID();
     const value = `${deviceId}.${await hmac(deviceId)}`;
-    const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+    const secure = isSecureRequest(request) ? "; Secure" : "";
     setCookie = `${COOKIE_NAME}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`;
   }
 
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const address = forwarded || request.headers.get("x-real-ip") || "unknown";
-  return { deviceId, deviceRateKey: await hmac(`device:${deviceId}`), ipKey: await hmac(`ip:${address}`), setCookie };
+  // A direct LAN deployment has no trusted component that can attest to the
+  // client address. Ignoring client-supplied forwarding headers avoids both
+  // spoofing and every attendee sharing the same "unknown" rate-limit bucket.
+  const address = trustsProxyHeaders()
+    ? firstForwardedValue(request.headers.get("x-forwarded-for")) ?? (request.headers.get("x-real-ip")?.trim() || undefined)
+    : undefined;
+  return {
+    deviceId,
+    deviceRateKey: await hmac(`device:${deviceId}`),
+    addressRateKey: address ? await hmac(`ip:${address}`) : undefined,
+    setCookie,
+  };
 }
