@@ -27,24 +27,33 @@ function firstForwardedValue(value: string | null) {
   return first || undefined;
 }
 
-function getExpectedOrigin(request: Request) {
-  const requestUrl = new URL(request.url);
-  if (process.env.TRUST_PROXY_HEADERS !== "true") {
-    return requestUrl.origin;
-  }
-
-  const protocol = firstForwardedValue(request.headers.get("x-forwarded-proto")) ?? requestUrl.protocol.slice(0, -1);
-  const host = firstForwardedValue(request.headers.get("x-forwarded-host")) ?? request.headers.get("host")?.trim() ?? requestUrl.host;
-
+function originFromAuthority(protocol: string, host: string, errorMessage: string) {
   if ((protocol !== "http" && protocol !== "https") || !host || /[\s/?#@]/.test(host)) {
-    throw new HttpError(403, "invalid reverse proxy headers");
+    throw new HttpError(403, errorMessage);
   }
 
   try {
     return new URL(`${protocol}://${host}`).origin;
   } catch {
-    throw new HttpError(403, "invalid reverse proxy headers");
+    throw new HttpError(403, errorMessage);
   }
+}
+
+function getExpectedOrigin(request: Request) {
+  const requestUrl = new URL(request.url);
+  if (process.env.TRUST_PROXY_HEADERS !== "true") {
+    // Next's standalone server can construct request.url from its internal
+    // listener (for example 127.0.0.1:3000) even when Docker publishes the
+    // application at another LAN address and port. The Host header is the
+    // browser-facing request authority and is therefore the correct direct
+    // deployment boundary for same-origin checks.
+    const host = request.headers.get("host")?.trim() || requestUrl.host;
+    return originFromAuthority(requestUrl.protocol.slice(0, -1), host, "invalid host header");
+  }
+
+  const protocol = firstForwardedValue(request.headers.get("x-forwarded-proto")) ?? requestUrl.protocol.slice(0, -1);
+  const host = firstForwardedValue(request.headers.get("x-forwarded-host")) ?? request.headers.get("host")?.trim() ?? requestUrl.host;
+  return originFromAuthority(protocol, host, "invalid reverse proxy headers");
 }
 
 export function requireSameOrigin(request: Request) {

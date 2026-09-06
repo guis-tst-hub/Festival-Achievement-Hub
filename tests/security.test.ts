@@ -81,6 +81,40 @@ test("same-origin protection accepts a matching direct request", () => {
   assert.doesNotThrow(() => requireSameOrigin(request));
 });
 
+test("same-origin protection uses the public Host behind a Docker port mapping", () => {
+  const previous = process.env.TRUST_PROXY_HEADERS;
+  delete process.env.TRUST_PROXY_HEADERS;
+
+  try {
+    const matching = new Request("http://127.0.0.1:3000/api/admin/festivals", {
+      headers: {
+        host: "192.168.123.28:3001",
+        origin: "http://192.168.123.28:3001",
+        "sec-fetch-site": "same-origin",
+      },
+    });
+    const mismatched = new Request("http://127.0.0.1:3000/api/admin/festivals", {
+      headers: {
+        host: "192.168.123.28:3001",
+        origin: "http://attacker.example",
+        "sec-fetch-site": "same-origin",
+      },
+    });
+
+    assert.doesNotThrow(() => requireSameOrigin(matching));
+    assert.throws(
+      () => requireSameOrigin(mismatched),
+      (error: unknown) => error instanceof HttpError && error.status === 403,
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.TRUST_PROXY_HEADERS;
+    } else {
+      process.env.TRUST_PROXY_HEADERS = previous;
+    }
+  }
+});
+
 test("forwarded origin is trusted only when the reverse-proxy boundary is enabled", () => {
   const previous = process.env.TRUST_PROXY_HEADERS;
   const request = new Request("http://app:3000/api/admin/festivals", {

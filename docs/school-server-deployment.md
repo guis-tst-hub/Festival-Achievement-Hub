@@ -37,7 +37,7 @@ git push origin v0.1.0
 For the currently tested release, the expected image is:
 
 ```text
-ghcr.io/guis-tst-hub/festival-achievement-hub:v0.7.0
+ghcr.io/guis-tst-hub/festival-achievement-hub:v0.7.1
 ```
 
 Do not deploy a release until both the normal CI workflow and the image-publishing workflow succeed.
@@ -58,7 +58,7 @@ chmod 600 .env
 Edit `.env` and set fresh production-only values:
 
 ```dotenv
-APP_IMAGE=ghcr.io/guis-tst-hub/festival-achievement-hub:v0.7.0
+APP_IMAGE=ghcr.io/guis-tst-hub/festival-achievement-hub:v0.7.1
 POSTGRES_DB=festival_hub
 POSTGRES_USER=festival_hub
 POSTGRES_PASSWORD=replace-with-a-production-random-value
@@ -86,7 +86,7 @@ unset FESTIVAL_GHCR_TOKEN
 For the existing school test server, keep its current secret values and set only these non-secret mode values in `.env`:
 
 ```dotenv
-APP_IMAGE=ghcr.io/guis-tst-hub/festival-achievement-hub:v0.7.0
+APP_IMAGE=ghcr.io/guis-tst-hub/festival-achievement-hub:v0.7.1
 SERVER_BIND=0.0.0.0
 APP_PORT=3001
 DATABASE_POOL_MAX=20
