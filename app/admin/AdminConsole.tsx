@@ -25,8 +25,10 @@ import { AchievementIconGraphic } from "../components/AchievementIconGraphic";
 import {
   FestivalAchievement,
   FestivalConfig,
+  defaultAchievementCategory,
   defaultFestivalConfig,
 } from "../lib/demo-store";
+import { createClientId } from "../lib/client-id";
 
 type AdminSection = "overview" | "new-activity" | "activity" | "achievements" | "categories";
 
@@ -129,7 +131,7 @@ export function AdminConsole() {
       if (!response.ok) throw new Error("在线数据库尚未就绪");
       const payload = await response.json() as { config: FestivalConfig; stats: ClaimStat[] };
       setConfig(payload.config);
-      setDraft((current) => ({ ...current, categoryId: payload.config.categories[0]?.id ?? "" }));
+      setDraft((current) => ({ ...current, categoryId: "" }));
       setClaimStats(payload.stats);
       setLimitDrafts(Object.fromEntries(payload.config.achievements.map((item) => [item.id, String(item.claimLimit || 100)])));
       setOnlineStatus("online");
@@ -255,7 +257,7 @@ export function AdminConsole() {
     event.preventDefault();
     const name = categoryName.trim();
     if (!name) return;
-    const id = `category-${crypto.randomUUID().slice(0, 8)}`;
+    const id = createClientId("category-");
     persist({
       ...config,
       categories: [
@@ -284,8 +286,8 @@ export function AdminConsole() {
 
   function addAchievement(event: FormEvent) {
     event.preventDefault();
-    if (!draft.name.trim() || !draft.claimCode.trim() || !draft.categoryId) {
-      setNotice("请填写名称、识别码和分类");
+    if (!draft.name.trim() || !draft.claimCode.trim()) {
+      setNotice("请填写名称和识别码");
       return;
     }
     if (config.achievements.some((item) => item.claimCode === draft.claimCode.trim())) {
@@ -294,14 +296,14 @@ export function AdminConsole() {
     }
     const nextAchievement: FestivalAchievement = {
       ...draft,
-      id: `ach_${crypto.randomUUID().slice(0, 8)}`,
+      id: createClientId("ach_"),
       name: draft.name.trim(),
       claimCode: draft.claimCode.trim(),
       description: draft.description.trim() || "等待补充成就说明",
       sortOrder: config.achievements.length * 10 + 10,
     };
     persist({ ...config, achievements: [...config.achievements, nextAchievement] }, "新成就已加入");
-    setDraft({ ...emptyAchievement, categoryId: config.categories[0]?.id ?? "" });
+    setDraft({ ...emptyAchievement, categoryId: "" });
   }
 
   function toggleAchievement(achievementId: string) {
@@ -535,7 +537,7 @@ export function AdminConsole() {
                       <span className="admin-achievement-icon"><AchievementIconGraphic icon={achievement.icon} /></span>
                       <div className="admin-achievement-copy">
                         <strong>{achievement.name}</strong>
-                        <small>{achievement.claimCode} · {config.categories.find((category) => category.id === achievement.categoryId)?.name ?? "未分组"}</small>
+                        <small>{achievement.claimCode} · {config.categories.find((category) => category.id === achievement.categoryId)?.name ?? defaultAchievementCategory.name}</small>
                         <div className="admin-icon-controls">
                           <button onClick={() => setEmojiTarget({ kind: "achievement", achievementId: achievement.id })}><SmilePlus size={11} />选择 Emoji</button>
                         </div>
@@ -570,7 +572,14 @@ export function AdminConsole() {
                   </div>
                 </div>
               </div>
-              <label>所属分类<select value={draft.categoryId} onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}>{config.categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
+              <label>
+                所属分类（可选）
+                <select value={draft.categoryId} onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}>
+                  <option value="">{defaultAchievementCategory.name}（不选择分类）</option>
+                  {config.categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}
+                </select>
+                <small>不选择时，成就会自动显示在默认分类中。</small>
+              </label>
               <label>领取上限<input type="number" min="1" max="100000" value={draft.claimLimit} onChange={(event) => setDraft({ ...draft, claimLimit: Number.parseInt(event.target.value || "1", 10) })} /></label>
               <button className="primary-admin-button" type="submit"><Save size={16} />保存成就</button>
             </form>
@@ -585,6 +594,12 @@ export function AdminConsole() {
               <button className="primary-admin-button" type="submit"><CirclePlus size={16} />新增分类</button>
             </form>
             <div className="category-admin-grid">
+              <article className="admin-panel default-category-card">
+                <span className="category-index">默认</span>
+                <h3>{defaultAchievementCategory.name}</h3>
+                <p>{defaultAchievementCategory.description}</p>
+                <div><span>{config.achievements.filter((achievement) => !achievement.categoryId).length} 个成就</span><small>系统分组</small></div>
+              </article>
               {config.categories.map((category) => {
                 const count = config.achievements.filter((achievement) => achievement.categoryId === category.id).length;
                 return <article className="admin-panel" key={category.id}><span className="category-index">{String(category.sortOrder).padStart(2, "0")}</span><h3>{category.name}</h3><p>{category.description}</p><div><span>{count} 个成就</span><button onClick={() => removeCategory(category.id)}><Archive size={14} />移除</button></div></article>;

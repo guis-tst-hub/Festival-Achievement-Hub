@@ -7,6 +7,13 @@ export type FestivalCategory = {
   sortOrder: number;
 };
 
+export const defaultAchievementCategory: FestivalCategory = {
+  id: "",
+  name: "默认分类",
+  description: "未选择分类的成就会显示在这里。",
+  sortOrder: 0,
+};
+
 export type FestivalAchievement = {
   id: string;
   claimCode: string;

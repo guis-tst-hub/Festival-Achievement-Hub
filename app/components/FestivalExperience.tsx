@@ -16,6 +16,7 @@ import {
   FestivalAchievement,
   FestivalConfig,
   UnlockState,
+  defaultAchievementCategory,
   loadUnlockState,
   saveUnlockState,
 } from "../lib/demo-store";
@@ -111,6 +112,15 @@ export function FestivalExperience() {
   const activeAchievements = useMemo(
     () => config.achievements.filter((achievement) => achievement.enabled),
     [config.achievements],
+  );
+  const visibleCategories = useMemo(
+    () => [
+      ...(activeAchievements.some((achievement) => !achievement.categoryId)
+        ? [defaultAchievementCategory]
+        : []),
+      ...config.categories,
+    ],
+    [activeAchievements, config.categories],
   );
   const unlockedCount = activeAchievements.filter(
     (achievement) => unlockState.unlocked[achievement.id],
@@ -394,7 +404,7 @@ export function FestivalExperience() {
                 </div>
               </div>
 
-              {config.categories
+              {visibleCategories
                 .slice()
                 .sort((a, b) => a.sortOrder - b.sortOrder)
                 .map((category) => {

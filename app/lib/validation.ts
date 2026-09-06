@@ -20,7 +20,7 @@ export const festivalAchievementSchema = z.object({
   name: shortText,
   description: z.string().trim().min(1).max(500),
   icon,
-  categoryId: id,
+  categoryId: id.or(z.literal("")),
   enabled: z.boolean(),
   sortOrder: z.number().int().min(0).max(1_000_000),
   claimLimit: z.number().int().min(1).max(100_000),
@@ -41,7 +41,7 @@ export const festivalConfigSchema = z.object({
   const achievementIds = new Set<string>();
   const claimCodes = new Set<string>();
   for (const achievement of config.achievements) {
-    if (!categoryIds.has(achievement.categoryId)) {
+    if (achievement.categoryId && !categoryIds.has(achievement.categoryId)) {
       context.addIssue({ code: "custom", path: ["achievements"], message: `unknown category: ${achievement.categoryId}` });
     }
     if (achievementIds.has(achievement.id)) {

@@ -5,6 +5,7 @@ import { festivalConfigSchema } from "../app/lib/validation";
 import { defaultFestivalConfig } from "../app/lib/demo-store";
 import { toPublicFestivalConfig } from "../db/claims";
 import { HttpError, requireSameOrigin } from "../app/lib/server-http";
+import { createClientId } from "../app/lib/client-id";
 
 test("public festival configuration does not expose claim codes", () => {
   const publicConfig = toPublicFestivalConfig(defaultFestivalConfig);
@@ -18,6 +19,23 @@ test("festival validation rejects duplicate claim codes and unknown categories",
   invalid.achievements[1].claimCode = invalid.achievements[0].claimCode;
   invalid.achievements[1].categoryId = "missing";
   assert.equal(festivalConfigSchema.safeParse(invalid).success, false);
+});
+
+test("festival validation accepts achievements in the default category", () => {
+  const config = structuredClone(defaultFestivalConfig);
+  config.achievements[0].categoryId = "";
+  assert.equal(festivalConfigSchema.safeParse(config).success, true);
+});
+
+test("client IDs fall back when randomUUID is unavailable on LAN HTTP", () => {
+  const generated = createClientId("category-", {
+    getRandomValues(array) {
+      array.set([0x12, 0x34, 0xab, 0xcd]);
+      return array;
+    },
+  });
+
+  assert.equal(generated, "category-1234abcd");
 });
 
 test("claim identity is server-signed and stable", async () => {

@@ -2116,6 +2116,16 @@ a {
   cursor: pointer;
 }
 
+.default-category-card {
+  border-style: dashed;
+}
+
+.default-category-card small {
+  color: #9a7226;
+  font-size: 9px;
+  font-weight: 700;
+}
+
 .package-layout {
   grid-template-columns: minmax(420px, 1fr) minmax(340px, 0.8fr);
   align-items: start;
