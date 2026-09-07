@@ -54,6 +54,17 @@ docker compose down -v       # 会永久删除数据库，请谨慎
 
 学校本地服务器通过 GitHub Actions、GHCR和生产 Compose发布的完整流程见 [`docs/school-server-deployment.md`](docs/school-server-deployment.md)。
 
+## 活动包
+
+进入管理台并选择一个活动后，可从左侧的“活动包管理”导入 ZIP。根目录必须包含：
+
+- `manifest.json`：活动包名称、版本、入口页面和 `sdkVersion: 1`
+- `festival-config.json`：分类、成就和二维码识别码
+- `index.html`：或 `manifest.entry` 指定的其他 HTML 入口
+- 页面所需的 CSS、JavaScript、图片、字体或音频资源
+
+导入会更新当前活动的名称、说明、分类和成就，但保留当前活动编号及开放状态。配置文件中的二维码识别码只会进入受保护的数据库，不会作为静态文件公开。活动包页面可通过 `/activity-package-sdk.js` 提供的 `window.NCPAActivity.getContext()` 和 `openScanner()` 接入平台。可直接上传 [`examples/cyberpunk-neon-package.zip`](examples/cyberpunk-neon-package.zip) 测试完整流程。
+
 ## 不使用 Docker 的本地运行
 
 需要 Node.js 22 和 PostgreSQL 14+：
@@ -81,4 +92,4 @@ npm run audit:production
 - 生产环境必须使用 HTTPS，并为 `ADMIN_PASSWORD`、`POSTGRES_PASSWORD` 和 `CLAIM_DEVICE_SECRET` 使用不同的强随机值。
 - 匿名设备限制旨在阻止普通重复领取，不等同于实名身份。来源地址和设备的数据库速率限制用于降低自动化滥用。
 - 二维码识别码仅出现在管理员生成的二维码中，不由访客配置接口返回。
-- 自定义 HTML 活动包和数据库内图片上传未作为生产功能提供；成就图案使用 Emoji。
+- 自定义 HTML 活动包以受限 ZIP 格式导入并保存在 PostgreSQL 中，页面始终在浏览器沙箱内运行；成就图案仍建议使用 Emoji。

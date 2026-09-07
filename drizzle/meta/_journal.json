@@ -15,6 +15,13 @@
       "when": 1787739910097,
       "tag": "0002_production_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788768000000,
+      "tag": "0003_activity_packages",
+      "breakpoints": true
     }
   ]
 }

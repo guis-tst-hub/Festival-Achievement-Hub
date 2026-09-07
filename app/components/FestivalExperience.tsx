@@ -61,7 +61,9 @@ export function FestivalExperience() {
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("starting");
   const [scannerMessage, setScannerMessage] = useState("");
   const [directClaimPending, setDirectClaimPending] = useState(false);
+  const [packageEntryUrl, setPackageEntryUrl] = useState<string | null>(null);
   const processedUrl = useRef(false);
+  const packageFrame = useRef<HTMLIFrameElement>(null);
   const scannerVideo = useRef<HTMLVideoElement>(null);
   const scannerCanvas = useRef<HTMLCanvasElement>(null);
   const scannerStream = useRef<MediaStream | null>(null);
@@ -84,9 +86,23 @@ export function FestivalExperience() {
         const nextConfig = payload.config?.status === "active" ? payload.config : inactiveFestivalConfig;
         setConfig(nextConfig);
         setUnlockState(nextConfig.status === "active" ? loadUnlockState(nextConfig.eventId) : { version: 1, unlocked: {} });
+        if (nextConfig.status === "active") {
+          try {
+            const packageResponse = await fetch(`/api/activity-package?eventId=${encodeURIComponent(nextConfig.eventId)}`, { cache: "no-store" });
+            const packagePayload = packageResponse.ok
+              ? await packageResponse.json() as { entryUrl: string | null }
+              : { entryUrl: null };
+            if (!cancelled) setPackageEntryUrl(packagePayload.entryUrl);
+          } catch {
+            if (!cancelled) setPackageEntryUrl(null);
+          }
+        } else {
+          setPackageEntryUrl(null);
+        }
         if (nextConfig.status === "closed") {
           setClaimResult(null);
           setScannerOpen(false);
+          setPackageEntryUrl(null);
         }
       } catch {
         if (!cancelled) {
@@ -247,6 +263,57 @@ export function FestivalExperience() {
     setScannerOpen(true);
   }, []);
 
+  useEffect(() => {
+    const frame = packageFrame.current;
+    if (!frame || !packageEntryUrl || config.status !== "active") return;
+    const activeFrame: HTMLIFrameElement = frame;
+
+    function respond(requestId: string, ok: boolean, value?: unknown, error?: string) {
+      activeFrame.contentWindow?.postMessage({
+        source: "ncpa-activity-host",
+        type: "response",
+        requestId,
+        ok,
+        value,
+        error,
+      }, "*");
+    }
+
+    function handlePackageMessage(event: MessageEvent) {
+      if (event.source !== activeFrame.contentWindow) return;
+      const message = event.data as { source?: string; type?: string; requestId?: string; method?: string } | null;
+      if (!message || message.source !== "ncpa-activity-package" || message.type !== "request" || typeof message.requestId !== "string") return;
+
+      if (message.method === "getContext") {
+        const achievements = activeAchievements.map((achievement) => ({
+          ...achievement,
+          claimCode: "",
+          unlocked: Boolean(unlockState.unlocked[achievement.id]),
+        }));
+        respond(message.requestId, true, {
+          event: config,
+          achievements,
+          progress: {
+            unlocked: achievements.filter((achievement) => achievement.unlocked).length,
+            total: achievements.length,
+          },
+        });
+        return;
+      }
+
+      if (message.method === "openScanner") {
+        openScanner();
+        respond(message.requestId, true, true);
+        return;
+      }
+
+      respond(message.requestId, false, undefined, "不支持的活动包操作");
+    }
+
+    window.addEventListener("message", handlePackageMessage);
+    return () => window.removeEventListener("message", handlePackageMessage);
+  }, [activeAchievements, config, openScanner, packageEntryUrl, unlockState]);
+
   function closeScanner() {
     stopLiveScanner();
     setScannerOpen(false);
@@ -357,6 +424,15 @@ export function FestivalExperience() {
       <section className="phone-shell" aria-label="节日成就页面">
         {config.status === "closed" ? (
           <ClosedFestival />
+        ) : packageEntryUrl ? (
+          <iframe
+            key={`${packageEntryUrl}:${Object.keys(unlockState.unlocked).length}`}
+            ref={packageFrame}
+            className="activity-package-frame"
+            src={packageEntryUrl}
+            sandbox="allow-scripts"
+            title={`${config.name}活动页面`}
+          />
         ) : (
           <div className="festival-scroll">
             <header className="festival-header">

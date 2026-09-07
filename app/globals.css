@@ -85,6 +85,15 @@ a {
   padding: 32px;
 }
 
+.activity-package-frame {
+  width: 100%;
+  min-height: calc(100svh - 50px);
+  display: block;
+  border: 0;
+  border-radius: inherit;
+  background: #090a12;
+}
+
 .festival-header {
   display: flex;
   align-items: flex-start;
@@ -2204,6 +2213,52 @@ a {
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   text-align: right;
+}
+
+.package-guidance {
+  border: 1px solid #e7dfd0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #756e64;
+  background: #faf8f2;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.package-guidance strong,
+.package-guidance p {
+  display: block;
+  margin: 0;
+}
+
+.package-guidance strong {
+  margin-bottom: 3px;
+  color: #4d473f;
+}
+
+.package-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.package-actions a,
+.package-actions button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 10px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.package-remove-button {
+  color: #9b493e;
 }
 
 .package-empty {

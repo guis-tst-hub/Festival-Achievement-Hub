@@ -11,18 +11,23 @@ import {
   CirclePlus,
   Download,
   Eye,
+  ExternalLink,
+  FolderArchive,
   LayoutDashboard,
+  PackageCheck,
   QrCode,
   RefreshCw,
   Save,
   Settings2,
   SmilePlus,
   Sparkles,
+  Trash2,
+  UploadCloud,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import QRCode from "qrcode";
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { AchievementIconGraphic } from "../components/AchievementIconGraphic";
 import {
   FestivalAchievement,
@@ -33,7 +38,7 @@ import {
 import { createClientId } from "../lib/client-id";
 import { AdminApiError, describeAdminError, readAdminJson } from "../lib/admin-api";
 
-type AdminSection = "overview" | "new-activity" | "activity" | "achievements" | "categories";
+type AdminSection = "overview" | "new-activity" | "activity" | "achievements" | "categories" | "packages";
 
 type FestivalSummary = {
   eventId: string;
@@ -77,6 +82,16 @@ type PendingSave = {
   successMessage: string;
 };
 
+type ActivityPackageSummary = {
+  eventId: string;
+  sourceEventId: string;
+  name: string;
+  version: string;
+  entry: string;
+  fileCount: number;
+  updatedAt: string;
+};
+
 const ACHIEVEMENT_EMOJIS = [
   "✦", "★", "✓", "☀️", "🌙", "⚡", "🔥", "🎉",
   "🏆", "🎭", "🎨", "🎵", "📚", "🔬", "⚽", "🧩",
@@ -118,6 +133,9 @@ export function AdminConsole() {
   const [qrBusyId, setQrBusyId] = useState<string | null>(null);
   const [emojiTarget, setEmojiTarget] = useState<EmojiTarget | null>(null);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+  const [activityPackage, setActivityPackage] = useState<ActivityPackageSummary | null>(null);
+  const [packageLoading, setPackageLoading] = useState(false);
+  const [packageUploading, setPackageUploading] = useState(false);
   const [onlineStatus, setOnlineStatus] = useState<"connecting" | "online" | "error">("connecting");
 
   const activeAchievements = useMemo(
@@ -206,6 +224,7 @@ export function AdminConsole() {
     if (!loaded) return;
     setQrPreview(null);
     setEmojiTarget(null);
+    setActivityPackage(null);
     setSelectedEventId(eventId);
     setSection("activity");
   }
@@ -439,6 +458,87 @@ export function AdminConsole() {
     setEmojiTarget(null);
   }
 
+  async function loadActivityPackage(eventId: string) {
+    setPackageLoading(true);
+    try {
+      const response = await fetch(`/api/admin/activity-package?eventId=${encodeURIComponent(eventId)}`, { cache: "no-store" });
+      const payload = await readAdminJson<{ package: ActivityPackageSummary | null }>(response);
+      setActivityPackage(payload.package);
+      setOnlineStatus("online");
+    } catch (error) {
+      setOnlineStatus("error");
+      setNotice(describeAdminError(error, "读取活动包"));
+    } finally {
+      setPackageLoading(false);
+    }
+  }
+
+  function openPackageManager() {
+    if (!selectedEventId) return;
+    setSection("packages");
+    void loadActivityPackage(selectedEventId);
+  }
+
+  async function uploadActivityPackage(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !selectedEventId || packageUploading) return;
+    if (!file.name.toLowerCase().endsWith(".zip")) {
+      setNotice("[PACKAGE_INVALID] 活动包必须是 ZIP 文件");
+      return;
+    }
+
+    setPackageUploading(true);
+    setOnlineStatus("connecting");
+    setNotice("正在检查并导入活动包…");
+    try {
+      const form = new FormData();
+      form.set("eventId", selectedEventId);
+      form.set("package", file);
+      const response = await fetch("/api/admin/activity-package", {
+        method: "POST",
+        cache: "no-store",
+        body: form,
+      });
+      const payload = await readAdminJson<{ config: FestivalConfig; stats: ClaimStat[]; summary: ActivityPackageSummary }>(response);
+      setConfig(payload.config);
+      setClaimStats(payload.stats);
+      setLimitDrafts(Object.fromEntries(payload.config.achievements.map((item) => [item.id, String(item.claimLimit || 100)])));
+      setActivityPackage(payload.summary);
+      setFestivals((current) => upsertFestivalSummary(current, summaryFromConfig(payload.config)));
+      setPendingSave(null);
+      setOnlineStatus("online");
+      setNotice(`活动包 ${payload.summary.version} 已导入并启用`);
+    } catch (error) {
+      setOnlineStatus("error");
+      setNotice(describeAdminError(error, "导入活动包"));
+    } finally {
+      setPackageUploading(false);
+    }
+  }
+
+  async function removeActivityPackage() {
+    if (!selectedEventId || !activityPackage || packageUploading) return;
+    if (!window.confirm("移除自定义活动包并恢复平台默认活动页面？成就和分类数据会保留。")) return;
+    setPackageUploading(true);
+    setOnlineStatus("connecting");
+    try {
+      const response = await fetch(`/api/admin/activity-package?eventId=${encodeURIComponent(selectedEventId)}`, {
+        method: "DELETE",
+        cache: "no-store",
+      });
+      await readAdminJson<{ removed: true }>(response);
+      setActivityPackage(null);
+      setOnlineStatus("online");
+      setNotice("自定义活动包已移除，访客页面已恢复默认界面");
+    } catch (error) {
+      setOnlineStatus("error");
+      setNotice(describeAdminError(error, "移除活动包"));
+    } finally {
+      setPackageUploading(false);
+    }
+  }
+
   return (
     <main className="admin-shell">
       <div className="admin-mobile-guard">
@@ -462,6 +562,7 @@ export function AdminConsole() {
               <AdminNav active={section === "activity"} onClick={() => setSection("activity")} icon={<CalendarDays size={18} />} label="活动设置" />
               <AdminNav active={section === "achievements"} onClick={() => setSection("achievements")} icon={<Sparkles size={18} />} label="成就管理" count={config.achievements.length} />
               <AdminNav active={section === "categories"} onClick={() => setSection("categories")} icon={<Boxes size={18} />} label="分类管理" count={config.categories.length} />
+              <AdminNav active={section === "packages"} onClick={openPackageManager} icon={<FolderArchive size={18} />} label="活动包管理" />
             </>
           ) : null}
         </nav>
@@ -541,10 +642,6 @@ export function AdminConsole() {
               <Metric label="成就总数" value={String(config.achievements.length)} detail={`${activeAchievements} 个正在启用`} />
               <Metric label="成就分类" value={String(config.categories.length)} detail="仅用于当前活动" />
               <Metric label="在线领取" value={String(totalOnlineClaims)} detail="已通过服务器校验" />
-            </div>
-            <div className="admin-panel quick-links activity-quick-links">
-              <button onClick={() => setSection("achievements")}><Sparkles size={19} /><span><strong>成就管理</strong><small>增加成就、设置识别码和名额</small></span><ChevronRight size={18} /></button>
-              <button onClick={() => setSection("categories")}><Boxes size={19} /><span><strong>分类管理</strong><small>管理当前活动的成就分组</small></span><ChevronRight size={18} /></button>
             </div>
           </div>
         ) : null}
@@ -632,6 +729,50 @@ export function AdminConsole() {
           </div>
         ) : null}
 
+        {section === "packages" ? (
+          <div className="admin-content package-layout">
+            <section className="admin-panel package-upload-panel">
+              <span className="panel-kicker">ACTIVITY PACKAGE</span>
+              <h2>导入活动包</h2>
+              <p>选择 ZIP 后，服务器会检查 <code>manifest.json</code>、<code>festival-config.json</code> 和入口页面，再保存到数据库。</p>
+              <label className="package-dropzone" aria-disabled={packageUploading}>
+                <input type="file" accept="application/zip,.zip" disabled={packageUploading} onChange={(event) => void uploadActivityPackage(event)} />
+                {packageUploading ? <span className="spinner" /> : <UploadCloud size={30} />}
+                <strong>{packageUploading ? "正在导入，请稍候" : activityPackage ? "选择新 ZIP 替换当前活动包" : "选择 ZIP 活动包"}</strong>
+                <small>最大 8 MB；导入会同步包内的分类与成就</small>
+              </label>
+              <div className="package-guidance">
+                <strong>导入规则</strong>
+                <p>当前活动编号和开放状态不会被覆盖。包内网页会在隔离环境运行，扫码仍由平台统一校验。</p>
+              </div>
+            </section>
+
+            <section className="admin-panel package-result-panel">
+              {packageLoading ? (
+                <div className="package-empty"><span className="spinner" /><h3>正在读取活动包</h3></div>
+              ) : activityPackage ? (
+                <>
+                  <div className="package-check"><PackageCheck size={28} /><span>当前活动包已启用</span></div>
+                  <dl>
+                    <div><dt>包内活动名称</dt><dd>{activityPackage.name}</dd></div>
+                    <div><dt>来源活动编号</dt><dd>{activityPackage.sourceEventId}</dd></div>
+                    <div><dt>版本</dt><dd>{activityPackage.version}</dd></div>
+                    <div><dt>入口页面</dt><dd>{activityPackage.entry}</dd></div>
+                    <div><dt>文件数量</dt><dd>{activityPackage.fileCount}</dd></div>
+                    <div><dt>最后导入</dt><dd>{new Date(activityPackage.updatedAt).toLocaleString("zh-CN")}</dd></div>
+                  </dl>
+                  <div className="package-actions">
+                    <Link className="primary-admin-button" href={`/?event=${encodeURIComponent(config.eventId)}`} target="_blank"><ExternalLink size={15} />打开活动页面</Link>
+                    <button className="text-admin-button package-remove-button" type="button" disabled={packageUploading} onClick={() => void removeActivityPackage()}><Trash2 size={15} />移除活动包</button>
+                  </div>
+                </>
+              ) : (
+                <div className="package-empty"><FolderArchive size={34} /><h3>尚未导入活动包</h3><p>当前访客看到的是平台默认活动页面。</p></div>
+              )}
+            </section>
+          </div>
+        ) : null}
+
       </section>
 
       {qrPreview ? (
@@ -702,6 +843,7 @@ function sectionTitle(section: AdminSection) {
     activity: "活动设置",
     achievements: "成就管理",
     categories: "分类管理",
+    packages: "活动包管理",
   }[section];
 }
 

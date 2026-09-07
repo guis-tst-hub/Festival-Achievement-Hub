@@ -1,5 +1,11 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, foreignKey, index, integer, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, check, customType, foreignKey, index, integer, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Uint8Array }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const claimEvents = pgTable("claim_events", {
   eventId: text("event_id").primaryKey(),
@@ -43,3 +49,20 @@ export const claimRateLimits = pgTable("claim_rate_limits", {
   windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull().defaultNow(),
   attemptCount: integer("attempt_count").notNull().default(1),
 }, (table) => [check("claim_rate_limits_count_check", sql`${table.attemptCount} > 0`)]);
+
+export const activityPackages = pgTable("activity_packages", {
+  eventId: text("event_id").primaryKey().references(() => claimEvents.eventId, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  version: text("version").notNull(),
+  entryPath: text("entry_path").notNull(),
+  manifestJson: text("manifest_json").notNull(),
+  fileCount: integer("file_count").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [check("activity_packages_file_count_check", sql`${table.fileCount} BETWEEN 1 AND 128`)]);
+
+export const activityPackageFiles = pgTable("activity_package_files", {
+  eventId: text("event_id").notNull().references(() => activityPackages.eventId, { onDelete: "cascade" }),
+  path: text("path").notNull(),
+  mimeType: text("mime_type").notNull(),
+  content: bytea("content").notNull(),
+}, (table) => [primaryKey({ columns: [table.eventId, table.path] })]);
