@@ -1,11 +1,10 @@
-import { ZodError } from "zod";
-import { apiError, readJson, requireSameOrigin } from "../../../lib/server-http";
+import { apiError, noStoreJson, readJson, requireSameOrigin } from "../../../lib/server-http";
 import { newFestivalSchema } from "../../../lib/validation";
 import { createFestival, FestivalAlreadyExistsError, listFestivals } from "../../../../db/claims";
 
 export async function GET() {
   try {
-    return Response.json({ festivals: await listFestivals() }, { headers: { "Cache-Control": "no-store" } });
+    return noStoreJson({ festivals: await listFestivals() });
   } catch (error) {
     return apiError(error, "festival list lookup failed");
   }
@@ -16,13 +15,10 @@ export async function POST(request: Request) {
     requireSameOrigin(request);
     const input = newFestivalSchema.parse(await readJson(request, 16 * 1024));
     const config = await createFestival(input);
-    return Response.json({ config }, { status: 201 });
+    return noStoreJson({ config }, { status: 201 });
   } catch (error) {
     if (error instanceof FestivalAlreadyExistsError) {
-      return Response.json({ error: error.message }, { status: 409 });
-    }
-    if (error instanceof ZodError) {
-      return Response.json({ error: "request validation failed" }, { status: 400 });
+      return noStoreJson({ code: "EVENT_ALREADY_EXISTS", error: error.message }, { status: 409 });
     }
     return apiError(error, "festival creation failed");
   }

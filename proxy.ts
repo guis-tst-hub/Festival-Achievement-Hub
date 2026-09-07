@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { applyNoStoreHeaders } from "./app/lib/cache-policy";
 
 async function equalSecret(left: string, right: string) {
   const values = await Promise.all([left, right].map((value) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))));
@@ -16,7 +17,10 @@ export async function proxy(request: NextRequest) {
   const username = process.env.ADMIN_USERNAME;
   const password = process.env.ADMIN_PASSWORD;
   if (!username || !password || password.length < 16) {
-    return new NextResponse("Admin access is not configured", { status: 503 });
+    return new NextResponse(JSON.stringify({ code: "ADMIN_NOT_CONFIGURED", error: "Admin access is not configured" }), {
+      status: 503,
+      headers: applyNoStoreHeaders(new Headers({ "Content-Type": "application/json" })),
+    });
   }
 
   const authorization = request.headers.get("authorization") ?? "";
@@ -24,14 +28,13 @@ export async function proxy(request: NextRequest) {
   if (!await equalSecret(authorization, expected)) {
     return new NextResponse("Authentication required", {
       status: 401,
-      headers: {
-        "Cache-Control": "no-store",
+      headers: applyNoStoreHeaders(new Headers({
         "WWW-Authenticate": 'Basic realm="Festival Admin", charset="UTF-8"',
-      },
+      })),
     });
   }
   const response = NextResponse.next();
-  response.headers.set("Cache-Control", "no-store");
+  applyNoStoreHeaders(response.headers);
   return response;
 }
 

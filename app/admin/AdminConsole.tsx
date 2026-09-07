@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   Archive,
   ArrowLeft,
   Boxes,
@@ -12,6 +13,7 @@ import {
   Eye,
   LayoutDashboard,
   QrCode,
+  RefreshCw,
   Save,
   Settings2,
   SmilePlus,
@@ -29,6 +31,7 @@ import {
   defaultFestivalConfig,
 } from "../lib/demo-store";
 import { createClientId } from "../lib/client-id";
+import { AdminApiError, describeAdminError, readAdminJson } from "../lib/admin-api";
 
 type AdminSection = "overview" | "new-activity" | "activity" | "achievements" | "categories";
 
@@ -68,6 +71,11 @@ type AchievementQrPreview = {
 type EmojiTarget =
   | { kind: "draft" }
   | { kind: "achievement"; achievementId: string };
+
+type PendingSave = {
+  config: FestivalConfig;
+  successMessage: string;
+};
 
 const ACHIEVEMENT_EMOJIS = [
   "✦", "★", "✓", "☀️", "🌙", "⚡", "🔥", "🎉",
@@ -109,6 +117,7 @@ export function AdminConsole() {
   const [qrPreview, setQrPreview] = useState<AchievementQrPreview | null>(null);
   const [qrBusyId, setQrBusyId] = useState<string | null>(null);
   const [emojiTarget, setEmojiTarget] = useState<EmojiTarget | null>(null);
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [onlineStatus, setOnlineStatus] = useState<"connecting" | "online" | "error">("connecting");
 
   const activeAchievements = useMemo(
@@ -127,30 +136,31 @@ export function AdminConsole() {
   async function loadOnlineState(eventId: string) {
     setOnlineStatus("connecting");
     try {
-      const response = await fetch(`/api/admin/claims?eventId=${encodeURIComponent(eventId)}`);
-      if (!response.ok) throw new Error("在线数据库尚未就绪");
-      const payload = await response.json() as { config: FestivalConfig; stats: ClaimStat[] };
+      const response = await fetch(`/api/admin/claims?eventId=${encodeURIComponent(eventId)}`, { cache: "no-store" });
+      const payload = await readAdminJson<{ config: FestivalConfig; stats: ClaimStat[] }>(response);
       setConfig(payload.config);
+      setPendingSave(null);
       setDraft((current) => ({ ...current, categoryId: "" }));
       setClaimStats(payload.stats);
       setLimitDrafts(Object.fromEntries(payload.config.achievements.map((item) => [item.id, String(item.claimLimit || 100)])));
       setOnlineStatus("online");
       return true;
-    } catch {
+    } catch (error) {
       setOnlineStatus("error");
+      setNotice(describeAdminError(error, "读取活动"));
       return false;
     }
   }
 
   async function loadFestivalList() {
     try {
-      const response = await fetch("/api/admin/festivals");
-      if (!response.ok) throw new Error("活动列表尚未就绪");
-      const payload = await response.json() as { festivals: FestivalSummary[] };
+      const response = await fetch("/api/admin/festivals", { cache: "no-store" });
+      const payload = await readAdminJson<{ festivals: FestivalSummary[] }>(response);
       setFestivals(payload.festivals);
       setOnlineStatus("online");
-    } catch {
+    } catch (error) {
       setOnlineStatus("error");
+      setNotice(describeAdminError(error, "读取活动列表"));
     }
   }
 
@@ -163,33 +173,37 @@ export function AdminConsole() {
 
   async function syncConfigOnline(nextConfig: FestivalConfig, successMessage: string) {
     setOnlineStatus("connecting");
+    setPendingSave(null);
     try {
       const response = await fetch("/api/admin/claims", {
         method: "POST",
+        cache: "no-store",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "sync", config: nextConfig }),
       });
-      if (!response.ok) throw new Error("同步失败");
-      const payload = await response.json() as { config: FestivalConfig; stats: ClaimStat[] };
+      const payload = await readAdminJson<{ config: FestivalConfig; stats: ClaimStat[] }>(response);
       setConfig(payload.config);
       setClaimStats(payload.stats);
       setFestivals((current) => upsertFestivalSummary(current, summaryFromConfig(payload.config)));
+      setPendingSave(null);
       setOnlineStatus("online");
       setNotice(successMessage);
-      window.setTimeout(() => setNotice(""), 2400);
-    } catch {
+      window.setTimeout(() => setNotice((current) => current === successMessage ? "" : current), 2400);
+    } catch (error) {
       setOnlineStatus("error");
-      setNotice("在线保存失败，正在恢复服务器配置");
-      await loadOnlineState(nextConfig.eventId);
+      setPendingSave({ config: nextConfig, successMessage });
+      setNotice(`${describeAdminError(error, "保存")}；当前修改仍保留在页面中`);
     }
+  }
+
+  function retryPendingSave() {
+    if (!pendingSave || onlineStatus === "connecting") return;
+    void syncConfigOnline(pendingSave.config, pendingSave.successMessage);
   }
 
   async function openActivity(eventId: string) {
     const loaded = await loadOnlineState(eventId);
-    if (!loaded) {
-      setNotice("无法读取该活动，请检查服务器连接");
-      return;
-    }
+    if (!loaded) return;
     setQrPreview(null);
     setEmojiTarget(null);
     setSelectedEventId(eventId);
@@ -215,14 +229,16 @@ export function AdminConsole() {
     try {
       const response = await fetch("/api/admin/festivals", {
         method: "POST",
+        cache: "no-store",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(festivalDraft),
       });
-      const payload = await response.json() as { config?: FestivalConfig; error?: string };
-      if (!response.ok || !payload.config) throw new Error(payload.error || "活动创建失败");
+      const payload = await readAdminJson<{ config?: FestivalConfig }>(response);
+      if (!payload.config) throw new AdminApiError(502, "INVALID_SERVER_RESPONSE", "missing festival config");
 
       const newConfig = payload.config;
       setConfig(newConfig);
+      setPendingSave(null);
       setClaimStats([]);
       setLimitDrafts({});
       setDraft({ ...emptyAchievement, categoryId: "" });
@@ -234,16 +250,21 @@ export function AdminConsole() {
       setNotice("活动已创建，默认处于未开放状态");
     } catch (error) {
       setOnlineStatus("error");
-      setNotice(error instanceof Error ? error.message : "活动创建失败");
+      setNotice(describeAdminError(error, "创建活动"));
     } finally {
       setCreatingFestival(false);
     }
   }
 
   function persist(nextConfig: FestivalConfig, message = "更改已保存") {
+    if (onlineStatus === "connecting") {
+      setNotice("[SAVE_IN_PROGRESS] 上一次操作仍在保存，请稍候");
+      return false;
+    }
     setConfig(nextConfig);
     setNotice("正在保存…");
     void syncConfigOnline(nextConfig, message);
+    return true;
   }
 
   function toggleEventStatus() {
@@ -256,9 +277,12 @@ export function AdminConsole() {
   function addCategory(event: FormEvent) {
     event.preventDefault();
     const name = categoryName.trim();
-    if (!name) return;
+    if (!name) {
+      setNotice("[CATEGORY_NAME_REQUIRED] 请输入分类名称");
+      return;
+    }
     const id = createClientId("category-");
-    persist({
+    const started = persist({
       ...config,
       categories: [
         ...config.categories,
@@ -270,12 +294,12 @@ export function AdminConsole() {
         },
       ],
     }, "新分类已加入");
-    setCategoryName("");
+    if (started) setCategoryName("");
   }
 
   function removeCategory(categoryId: string) {
     if (config.achievements.some((achievement) => achievement.categoryId === categoryId)) {
-      setNotice("这个分类仍有成就，请先移动成就");
+      setNotice("[CATEGORY_IN_USE] 这个分类仍有成就，请先移动成就");
       return;
     }
     persist({
@@ -287,11 +311,11 @@ export function AdminConsole() {
   function addAchievement(event: FormEvent) {
     event.preventDefault();
     if (!draft.name.trim() || !draft.claimCode.trim()) {
-      setNotice("请填写名称和识别码");
+      setNotice("[ACHIEVEMENT_REQUIRED_FIELDS] 请填写名称和识别码");
       return;
     }
     if (config.achievements.some((item) => item.claimCode === draft.claimCode.trim())) {
-      setNotice("识别码不能重复");
+      setNotice("[CLAIM_CODE_DUPLICATE] 识别码不能重复");
       return;
     }
     const nextAchievement: FestivalAchievement = {
@@ -302,8 +326,8 @@ export function AdminConsole() {
       description: draft.description.trim() || "等待补充成就说明",
       sortOrder: config.achievements.length * 10 + 10,
     };
-    persist({ ...config, achievements: [...config.achievements, nextAchievement] }, "新成就已加入");
-    setDraft({ ...emptyAchievement, categoryId: "" });
+    const started = persist({ ...config, achievements: [...config.achievements, nextAchievement] }, "新成就已加入");
+    if (started) setDraft({ ...emptyAchievement, categoryId: "" });
   }
 
   function toggleAchievement(achievementId: string) {
@@ -320,7 +344,7 @@ export function AdminConsole() {
   function saveClaimLimit(achievementId: string) {
     const parsed = Number.parseInt(limitDrafts[achievementId] ?? "", 10);
     if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100000) {
-      setNotice("领取上限必须是 1 到 100000 的整数");
+      setNotice("[CLAIM_LIMIT_INVALID] 领取上限必须是 1 到 100000 的整数");
       return;
     }
     const nextConfig = {
@@ -336,16 +360,16 @@ export function AdminConsole() {
     try {
       const response = await fetch("/api/admin/claims", {
         method: "POST",
+        cache: "no-store",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "reset", eventId: config.eventId, achievementId }),
       });
-      if (!response.ok) throw new Error("重置失败");
-      const payload = await response.json() as { stats: ClaimStat[] };
+      const payload = await readAdminJson<{ stats: ClaimStat[] }>(response);
       setClaimStats(payload.stats);
       setNotice("该成就的在线领取计数已清零");
       setOnlineStatus("online");
-    } catch {
-      setNotice("领取计数重置失败");
+    } catch (error) {
+      setNotice(describeAdminError(error, "重置领取计数"));
       setOnlineStatus("error");
     }
   }
@@ -373,7 +397,7 @@ export function AdminConsole() {
     try {
       setQrPreview(await createAchievementQr(achievement));
     } catch {
-      setNotice("二维码生成失败，请稍后重试");
+      setNotice("[QR_GENERATION_FAILED] 二维码生成失败，请稍后重试");
     } finally {
       setQrBusyId(null);
     }
@@ -393,7 +417,7 @@ export function AdminConsole() {
     try {
       downloadQr(await createAchievementQr(achievement));
     } catch {
-      setNotice("二维码下载失败，请稍后重试");
+      setNotice("[QR_DOWNLOAD_FAILED] 二维码下载失败，请稍后重试");
     } finally {
       setQrBusyId(null);
     }
@@ -648,7 +672,17 @@ export function AdminConsole() {
         </div>
       ) : null}
 
-      {notice ? <div className="admin-toast"><Check size={15} />{notice}</div> : null}
+      {notice ? (
+        <div className={pendingSave ? "admin-toast is-error" : "admin-toast"} role="status">
+          {pendingSave ? <AlertTriangle size={15} /> : <Check size={15} />}
+          <span>{notice}</span>
+          {pendingSave ? (
+            <button type="button" onClick={retryPendingSave} disabled={onlineStatus === "connecting"}>
+              <RefreshCw size={13} />{onlineStatus === "connecting" ? "重试中" : "重新保存"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </main>
   );
 }

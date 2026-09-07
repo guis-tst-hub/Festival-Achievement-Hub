@@ -1,5 +1,5 @@
 import { getClaimIdentity } from "../../lib/claim-identity";
-import { apiError, readJson } from "../../lib/server-http";
+import { apiError, noStoreJson, readJson } from "../../lib/server-http";
 import { claimRequestSchema } from "../../lib/validation";
 import { claimOnline, consumeClaimRateLimit } from "../../../db/claims";
 
@@ -13,16 +13,16 @@ export async function POST(request: Request) {
       : Promise.resolve(true);
     const [deviceAllowed, addressAllowed] = await Promise.all([deviceLimit, addressLimit]);
     if (!deviceAllowed || !addressAllowed) {
-      return Response.json(
-        { error: "too many claim attempts" },
+      return noStoreJson(
+        { code: "RATE_LIMITED", error: "too many claim attempts" },
         { status: 429, headers: { "Retry-After": "60", ...(identity.setCookie ? { "Set-Cookie": identity.setCookie } : {}) } },
       );
     }
 
     const result = await claimOnline(payload.eventId, payload.claimCode, identity.deviceId);
-    return Response.json(result, {
+    return noStoreJson(result, {
       status: result.status === "not_found" ? 404 : 200,
-      headers: { "Cache-Control": "no-store", ...(identity.setCookie ? { "Set-Cookie": identity.setCookie } : {}) },
+      headers: identity.setCookie ? { "Set-Cookie": identity.setCookie } : undefined,
     });
   } catch (error) {
     return apiError(error, "claim failed");

@@ -37,5 +37,7 @@ test("protects admin pages and APIs and renders with credentials", async () => {
   const authorization = `Basic ${Buffer.from("test-admin:test-password-with-32-characters").toString("base64")}`;
   const response = await fetch(`http://127.0.0.1:${port}/admin`, { headers: { authorization } });
   assert.equal(response.status, 200);
+  assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+  assert.equal(response.headers.get("pragma"), "no-cache");
   assert.match(await response.text(), /活动列表/);
 });

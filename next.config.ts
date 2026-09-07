@@ -9,11 +9,21 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
 ];
 
+const dynamicNoStoreHeaders = [
+  { key: "Cache-Control", value: "no-store, max-age=0, must-revalidate" },
+  { key: "Pragma", value: "no-cache" },
+  { key: "Expires", value: "0" },
+];
+
 const nextConfig: NextConfig = {
   output: "standalone",
   turbopack: { root: process.cwd() },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      { source: "/admin/:path*", headers: dynamicNoStoreHeaders },
+      { source: "/api/admin/:path*", headers: dynamicNoStoreHeaders },
+    ];
   },
 };
 
