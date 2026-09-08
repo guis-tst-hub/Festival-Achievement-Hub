@@ -66,3 +66,49 @@ export const activityPackageFiles = pgTable("activity_package_files", {
   mimeType: text("mime_type").notNull(),
   content: bytea("content").notNull(),
 }, (table) => [primaryKey({ columns: [table.eventId, table.path] })]);
+
+export const admins = pgTable("admins", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  role: text("role").notNull().default("admin"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("idx_admins_username").on(table.username),
+  check("admins_role_check", sql`${table.role} IN ('superadmin', 'admin')`),
+]);
+
+export const adminSessions = pgTable("admin_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  csrfTokenHash: text("csrf_token_hash").notNull(),
+  adminId: integer("admin_id").notNull().references(() => admins.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("idx_admin_sessions_expires_at").on(table.expiresAt)]);
+
+export const adminLoginAttempts = pgTable("admin_login_attempts", {
+  rateKey: text("rate_key").primaryKey(),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull().defaultNow(),
+  attemptCount: integer("attempt_count").notNull().default(1),
+}, (table) => [check("admin_login_attempts_count_check", sql`${table.attemptCount} > 0`)]);
+
+export const adminAuditLogs = pgTable("admin_audit_logs", {
+  id: serial("id").primaryKey(),
+  actorUsername: text("actor_username"),
+  action: text("action").notNull(),
+  target: text("target"),
+  detailJson: text("detail_json").notNull().default("{}"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("idx_admin_audit_logs_created_at").on(table.createdAt)]);
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  valueJson: text("value_json").notNull(),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

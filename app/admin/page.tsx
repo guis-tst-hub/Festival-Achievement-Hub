@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AdminConsole } from "./AdminConsole";
+import { AdminPortal } from "./AdminPortal";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,5 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function AdminPage() {
-  return <AdminConsole />;
+  return <AdminPortal />;
 }

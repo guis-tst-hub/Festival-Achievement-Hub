@@ -1,8 +1,11 @@
 import { getActivityPackageSummary } from "../../../db/activity-packages";
 import { apiError, noStoreJson } from "../../lib/server-http";
+import { getMaintenanceState } from "../../lib/system-settings";
 
 export async function GET(request: Request) {
   try {
+    const maintenance = await getMaintenanceState();
+    if (maintenance.active) return noStoreJson({ code: "MAINTENANCE_ACTIVE", error: maintenance.message }, { status: 503 });
     const eventId = new URL(request.url).searchParams.get("eventId")?.trim() ?? "";
     if (!/^[a-z0-9][a-z0-9-]{2,63}$/.test(eventId)) {
       return noStoreJson({ code: "EVENT_ID_INVALID", error: "invalid eventId" }, { status: 400 });

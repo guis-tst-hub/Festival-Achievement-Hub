@@ -76,10 +76,19 @@ export function describeAdminError(error: unknown, action = "操作") {
 
   const messages: Record<string, string> = {
     ACCESS_REJECTED: "服务器拒绝了当前请求",
+    ADMIN_ALREADY_EXISTS: "这个管理员用户名已经存在",
+    ADMIN_DELETE_SELF: "不能删除当前正在登录的账号",
+    ADMIN_LOGIN_FAILED: "用户名或密码不正确",
+    ADMIN_LOGIN_RATE_LIMITED: "登录失败次数过多，请十五分钟后再试",
+    ADMIN_NOT_CONFIGURED: "初始超级管理员尚未配置",
+    ADMIN_NOT_FOUND: "管理员账号不存在",
+    ADMIN_PASSWORD_INVALID: "密码必须为12到128个字符",
+    ADMIN_USERNAME_INVALID: "管理员用户名格式不正确",
     AUTH_REQUIRED: "管理员登录已失效，请刷新页面并重新登录",
     BAD_REQUEST: "提交内容格式不正确",
     CONFLICT: "提交内容与服务器现有数据冲突",
     CROSS_ORIGIN_REJECTED: "安全地址校验失败，请使用当前服务器地址打开管理台",
+    CSRF_REJECTED: "登录安全令牌已失效，请重新登录",
     EVENT_ALREADY_EXISTS: "这个活动编号已经存在",
     EVENT_ID_INVALID: "活动编号格式不正确",
     EVENT_NOT_FOUND: "活动不存在或已被移除",
@@ -87,11 +96,16 @@ export function describeAdminError(error: unknown, action = "操作") {
     INVALID_JSON: "提交内容无法被服务器读取",
     INVALID_ORIGIN: "服务器无法确认当前管理台地址",
     INVALID_SERVER_RESPONSE: "服务器返回了无法识别的内容",
+    MAINTENANCE_ACTIVE: "系统正在维护，请稍后再试",
     NOT_FOUND: "请求的内容不存在",
     PAYLOAD_TOO_LARGE: "提交内容过大，请缩小内容后重试",
     RATE_LIMITED: "操作过于频繁，请稍后重试",
     REQUEST_FAILED: "请求没有成功",
     SERVER_ERROR: "服务器暂时无法完成请求",
+    SUPERADMIN_PROTECTED: "不能删除受保护的超级管理员账号",
+    SUPERADMIN_REQUIRED: "只有超级管理员可以执行这个操作",
+    GITHUB_UPDATE_FAILED: "GitHub 没有接受更新请求，请检查令牌和工作流",
+    GITHUB_UPDATE_NOT_CONFIGURED: "尚未配置 GitHub 更新功能",
   };
   const detail = error.code === "VALIDATION_FAILED"
     ? validationDetail(error)

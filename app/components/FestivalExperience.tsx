@@ -7,6 +7,7 @@ import {
   Check,
   LockKeyhole,
   QrCode,
+  Wrench,
   X,
 } from "lucide-react";
 import jsQR from "jsqr";
@@ -41,6 +42,11 @@ type OnlineClaimResponse = {
 
 type ScannerStatus = "starting" | "scanning" | "verifying" | "unavailable" | "error";
 
+type MaintenanceState = {
+  active: boolean;
+  message: string;
+};
+
 const inactiveFestivalConfig: FestivalConfig = {
   eventId: "",
   name: "",
@@ -62,6 +68,7 @@ export function FestivalExperience() {
   const [scannerMessage, setScannerMessage] = useState("");
   const [directClaimPending, setDirectClaimPending] = useState(false);
   const [packageEntryUrl, setPackageEntryUrl] = useState<string | null>(null);
+  const [maintenance, setMaintenance] = useState<MaintenanceState>({ active: false, message: "系统正在维护，请稍后再试。" });
   const processedUrl = useRef(false);
   const packageFrame = useRef<HTMLIFrameElement>(null);
   const scannerVideo = useRef<HTMLVideoElement>(null);
@@ -73,7 +80,7 @@ export function FestivalExperience() {
 
   useEffect(() => {
     let cancelled = false;
-    const syncConfig = async () => {
+    const syncConfig = async (preserveOnFailure = false) => {
       const requestedEvent = new URLSearchParams(window.location.search).get("event");
       const endpoint = requestedEvent
         ? `/api/festival?eventId=${encodeURIComponent(requestedEvent)}`
@@ -81,8 +88,9 @@ export function FestivalExperience() {
       try {
         const response = await fetch(endpoint);
         if (!response.ok) throw new Error("活动读取失败");
-        const payload = await response.json() as { config: FestivalConfig | null };
+        const payload = await response.json() as { config: FestivalConfig | null; maintenance?: MaintenanceState };
         if (cancelled) return;
+        setMaintenance(payload.maintenance ?? { active: false, message: "系统正在维护，请稍后再试。" });
         const nextConfig = payload.config?.status === "active" ? payload.config : inactiveFestivalConfig;
         setConfig(nextConfig);
         setUnlockState(nextConfig.status === "active" ? loadUnlockState(nextConfig.eventId) : { version: 1, unlocked: {} });
@@ -105,7 +113,7 @@ export function FestivalExperience() {
           setPackageEntryUrl(null);
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !preserveOnFailure) {
           setConfig(inactiveFestivalConfig);
           setUnlockState({ version: 1, unlocked: {} });
           setClaimResult(null);
@@ -119,9 +127,13 @@ export function FestivalExperience() {
     const hydrationTimer = window.setTimeout(() => {
       void syncConfig();
     }, 0);
+    const maintenancePoll = window.setInterval(() => {
+      void syncConfig(true);
+    }, 10_000);
     return () => {
       cancelled = true;
       window.clearTimeout(hydrationTimer);
+      window.clearInterval(maintenancePoll);
     };
   }, []);
 
@@ -211,7 +223,7 @@ export function FestivalExperience() {
   }, [claimAchievement, config.eventId]);
 
   useEffect(() => {
-    if (!hydrated || processedUrl.current) return;
+    if (!hydrated || maintenance.active || processedUrl.current) return;
     processedUrl.current = true;
     if (config.status !== "active") {
       window.history.replaceState({}, "", window.location.pathname);
@@ -243,7 +255,7 @@ export function FestivalExperience() {
       cancelled = true;
       window.clearTimeout(claimTimer);
     };
-  }, [claimAchievement, config.eventId, config.status, hydrated]);
+  }, [claimAchievement, config.eventId, config.status, hydrated, maintenance.active]);
 
   const stopLiveScanner = useCallback(() => {
     if (scannerFrame.current !== null) {
@@ -422,7 +434,9 @@ export function FestivalExperience() {
   return (
     <main className={`festival-stage ${config.status === "closed" ? "is-idle" : ""}`}>
       <section className="phone-shell" aria-label="节日成就页面">
-        {config.status === "closed" ? (
+        {maintenance.active ? (
+          <MaintenanceFestival message={maintenance.message} />
+        ) : config.status === "closed" ? (
           <ClosedFestival />
         ) : packageEntryUrl ? (
           <iframe
@@ -589,6 +603,18 @@ function ClosedFestival() {
   return (
     <div className="closed-festival">
       <h1>活动未开始</h1>
+    </div>
+  );
+}
+
+function MaintenanceFestival({ message }: { message: string }) {
+  return (
+    <div className="maintenance-festival" role="status" aria-live="polite">
+      <span><Wrench size={25} /></span>
+      <p>MAINTENANCE</p>
+      <h1>系统维护中</h1>
+      <div>{message}</div>
+      <small>页面会在更新完成后自动恢复</small>
     </div>
   );
 }

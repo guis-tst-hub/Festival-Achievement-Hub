@@ -179,3 +179,22 @@ Verify the public page, admin authentication, one valid claim, one duplicate cla
 Change `APP_IMAGE` back to the previous known-good tag and recreate the app container. Database migrations may not be backward compatible, so prefer a forward fix and never restore over the production database without testing the backup in isolation.
 
 Do not run `docker compose down -v`; it deletes the PostgreSQL volume.
+
+## 9. Admin-panel GitHub update
+
+The administrator panel can dispatch `.github/workflows/deploy-school.yml`. The web container does not receive the Docker socket; only a dedicated self-hosted runner on the school server performs the deployment.
+
+Register the runner only to this private repository and add the custom label `festival-hub-school`. Its restricted system account needs read access to `/home/tst-student/festival-hub-prod/.env` and permission to run Docker. Do not enable this self-hosted runner for untrusted pull requests.
+
+Create a fine-grained GitHub token limited to this repository with `Actions: Write`, then add these production-only values to the server `.env`:
+
+```dotenv
+GITHUB_UPDATE_TOKEN=replace-with-the-fine-grained-token
+GITHUB_UPDATE_REPOSITORY=guis-tst-hub/Festival-Achievement-Hub
+GITHUB_UPDATE_WORKFLOW=deploy-school.yml
+GITHUB_UPDATE_REF=main
+```
+
+The button first turns on the database-backed maintenance notice, then dispatches the workflow. A successful health-checked deployment turns maintenance off. A failed deployment intentionally leaves maintenance enabled so an administrator can investigate or end it manually.
+
+The current workflow expects the production environment file at `/home/tst-student/festival-hub-prod/.env`. Change `DEPLOY_ENV_FILE` in the workflow if the server uses a different path.

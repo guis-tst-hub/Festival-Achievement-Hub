@@ -13,21 +13,27 @@ import {
   Eye,
   ExternalLink,
   FolderArchive,
+  GitBranch,
   LayoutDashboard,
+  LogOut,
   PackageCheck,
   QrCode,
   RefreshCw,
   Save,
   Settings2,
+  ShieldCheck,
   SmilePlus,
   Sparkles,
   Trash2,
   UploadCloud,
+  UserPlus,
+  Users,
+  Wrench,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import QRCode from "qrcode";
-import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { AchievementIconGraphic } from "../components/AchievementIconGraphic";
 import {
   FestivalAchievement,
@@ -38,7 +44,26 @@ import {
 import { createClientId } from "../lib/client-id";
 import { AdminApiError, describeAdminError, readAdminJson } from "../lib/admin-api";
 
-type AdminSection = "overview" | "new-activity" | "activity" | "achievements" | "categories" | "packages";
+type AdminSection = "administrators" | "overview" | "new-activity" | "activity" | "achievements" | "categories" | "packages";
+
+export type AdminUiSession = {
+  user: { id: number; username: string; role: "superadmin" | "admin" };
+  csrfToken: string;
+};
+
+type AdminListItem = AdminUiSession["user"] & {
+  enabled: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  lastLoginAt: string | null;
+};
+
+type MaintenanceState = {
+  active: boolean;
+  message: string;
+  startedAt: string | null;
+  startedBy: string | null;
+};
 
 type FestivalSummary = {
   eventId: string;
@@ -117,7 +142,7 @@ const emptyFestivalDraft: NewFestivalDraft = {
   dateLabel: "",
 };
 
-export function AdminConsole() {
+export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSession; onSessionExpired: () => void }) {
   const [config, setConfig] = useState<FestivalConfig>(defaultFestivalConfig);
   const [section, setSection] = useState<AdminSection>("overview");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -137,6 +162,22 @@ export function AdminConsole() {
   const [packageLoading, setPackageLoading] = useState(false);
   const [packageUploading, setPackageUploading] = useState(false);
   const [onlineStatus, setOnlineStatus] = useState<"connecting" | "online" | "error">("connecting");
+  const [admins, setAdmins] = useState<AdminListItem[]>([]);
+  const [adminUsername, setAdminUsername] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [maintenance, setMaintenance] = useState<MaintenanceState>({ active: false, message: "系统正在维护，请稍后再试。", startedAt: null, startedBy: null });
+  const [updateConfigured, setUpdateConfigured] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
+
+  const adminFetch = useCallback(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    const method = (init.method ?? "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD") headers.set("x-csrf-token", session.csrfToken);
+    const response = await fetch(input, { ...init, headers });
+    if (response.status === 401) onSessionExpired();
+    return response;
+  }, [onSessionExpired, session.csrfToken]);
 
   const activeAchievements = useMemo(
     () => config.achievements.filter((achievement) => achievement.enabled).length,
@@ -154,7 +195,7 @@ export function AdminConsole() {
   async function loadOnlineState(eventId: string) {
     setOnlineStatus("connecting");
     try {
-      const response = await fetch(`/api/admin/claims?eventId=${encodeURIComponent(eventId)}`, { cache: "no-store" });
+      const response = await adminFetch(`/api/admin/claims?eventId=${encodeURIComponent(eventId)}`, { cache: "no-store" });
       const payload = await readAdminJson<{ config: FestivalConfig; stats: ClaimStat[] }>(response);
       setConfig(payload.config);
       setPendingSave(null);
@@ -170,30 +211,36 @@ export function AdminConsole() {
     }
   }
 
-  async function loadFestivalList() {
+  const loadFestivalList = useCallback(async () => {
     try {
-      const response = await fetch("/api/admin/festivals", { cache: "no-store" });
+      const [response, systemResponse] = await Promise.all([
+        adminFetch("/api/admin/festivals", { cache: "no-store" }),
+        adminFetch("/api/admin/system", { cache: "no-store" }),
+      ]);
       const payload = await readAdminJson<{ festivals: FestivalSummary[] }>(response);
+      const systemPayload = await readAdminJson<{ maintenance: MaintenanceState; updateConfigured: boolean }>(systemResponse);
       setFestivals(payload.festivals);
+      setMaintenance(systemPayload.maintenance);
+      setUpdateConfigured(systemPayload.updateConfigured);
       setOnlineStatus("online");
     } catch (error) {
       setOnlineStatus("error");
       setNotice(describeAdminError(error, "读取活动列表"));
     }
-  }
+  }, [adminFetch]);
 
   useEffect(() => {
     const hydrationTimer = window.setTimeout(() => {
       void loadFestivalList();
     }, 0);
     return () => window.clearTimeout(hydrationTimer);
-  }, []);
+  }, [loadFestivalList]);
 
   async function syncConfigOnline(nextConfig: FestivalConfig, successMessage: string) {
     setOnlineStatus("connecting");
     setPendingSave(null);
     try {
-      const response = await fetch("/api/admin/claims", {
+      const response = await adminFetch("/api/admin/claims", {
         method: "POST",
         cache: "no-store",
         headers: { "content-type": "application/json" },
@@ -246,7 +293,7 @@ export function AdminConsole() {
     setCreatingFestival(true);
     setOnlineStatus("connecting");
     try {
-      const response = await fetch("/api/admin/festivals", {
+      const response = await adminFetch("/api/admin/festivals", {
         method: "POST",
         cache: "no-store",
         headers: { "content-type": "application/json" },
@@ -377,7 +424,7 @@ export function AdminConsole() {
 
   async function resetOnlineCount(achievementId: string) {
     try {
-      const response = await fetch("/api/admin/claims", {
+      const response = await adminFetch("/api/admin/claims", {
         method: "POST",
         cache: "no-store",
         headers: { "content-type": "application/json" },
@@ -461,7 +508,7 @@ export function AdminConsole() {
   async function loadActivityPackage(eventId: string) {
     setPackageLoading(true);
     try {
-      const response = await fetch(`/api/admin/activity-package?eventId=${encodeURIComponent(eventId)}`, { cache: "no-store" });
+      const response = await adminFetch(`/api/admin/activity-package?eventId=${encodeURIComponent(eventId)}`, { cache: "no-store" });
       const payload = await readAdminJson<{ package: ActivityPackageSummary | null }>(response);
       setActivityPackage(payload.package);
       setOnlineStatus("online");
@@ -495,7 +542,7 @@ export function AdminConsole() {
       const form = new FormData();
       form.set("eventId", selectedEventId);
       form.set("package", file);
-      const response = await fetch("/api/admin/activity-package", {
+      const response = await adminFetch("/api/admin/activity-package", {
         method: "POST",
         cache: "no-store",
         body: form,
@@ -523,7 +570,7 @@ export function AdminConsole() {
     setPackageUploading(true);
     setOnlineStatus("connecting");
     try {
-      const response = await fetch(`/api/admin/activity-package?eventId=${encodeURIComponent(selectedEventId)}`, {
+      const response = await adminFetch(`/api/admin/activity-package?eventId=${encodeURIComponent(selectedEventId)}`, {
         method: "DELETE",
         cache: "no-store",
       });
@@ -536,6 +583,126 @@ export function AdminConsole() {
       setNotice(describeAdminError(error, "移除活动包"));
     } finally {
       setPackageUploading(false);
+    }
+  }
+
+  async function loadAdministratorPanel() {
+    setOnlineStatus("connecting");
+    try {
+      const [adminsResponse, systemResponse] = await Promise.all([
+        adminFetch("/api/admin/admins", { cache: "no-store" }),
+        adminFetch("/api/admin/system", { cache: "no-store" }),
+      ]);
+      const adminPayload = await readAdminJson<{ admins: AdminListItem[] }>(adminsResponse);
+      const systemPayload = await readAdminJson<{ maintenance: MaintenanceState; updateConfigured: boolean }>(systemResponse);
+      setAdmins(adminPayload.admins);
+      setMaintenance(systemPayload.maintenance);
+      setUpdateConfigured(systemPayload.updateConfigured);
+      setOnlineStatus("online");
+    } catch (error) {
+      setOnlineStatus("error");
+      setNotice(describeAdminError(error, "读取管理员面板"));
+    }
+  }
+
+  function openAdministratorPanel() {
+    setSelectedEventId(null);
+    setSection("administrators");
+    void loadAdministratorPanel();
+  }
+
+  async function addAdministrator(event: FormEvent) {
+    event.preventDefault();
+    if (adminBusy || session.user.role !== "superadmin") return;
+    setAdminBusy(true);
+    try {
+      const response = await adminFetch("/api/admin/admins", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: adminUsername, password: adminPassword }),
+      });
+      await readAdminJson<{ admin: AdminListItem }>(response);
+      setAdminUsername("");
+      setAdminPassword("");
+      setNotice("普通管理员账号已创建");
+      await loadAdministratorPanel();
+    } catch (error) {
+      setNotice(describeAdminError(error, "新增管理员"));
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function removeAdministrator(username: string) {
+    if (adminBusy || session.user.role !== "superadmin") return;
+    if (!window.confirm(`删除管理员 ${username}？该账号的现有登录会话会立即失效。`)) return;
+    setAdminBusy(true);
+    try {
+      const response = await adminFetch(`/api/admin/admins?username=${encodeURIComponent(username)}`, {
+        method: "DELETE",
+        cache: "no-store",
+      });
+      await readAdminJson<{ removed: true }>(response);
+      setNotice(`管理员 ${username} 已删除`);
+      await loadAdministratorPanel();
+    } catch (error) {
+      setNotice(describeAdminError(error, "删除管理员"));
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function changeMaintenance(active: boolean) {
+    if (updateBusy) return;
+    setUpdateBusy(true);
+    try {
+      const response = await adminFetch("/api/admin/system", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "setMaintenance", active }),
+      });
+      const payload = await readAdminJson<{ maintenance: MaintenanceState; updateConfigured: boolean }>(response);
+      setMaintenance(payload.maintenance);
+      setUpdateConfigured(payload.updateConfigured);
+      setNotice(active ? "维护提示已开启" : "维护提示已关闭");
+    } catch (error) {
+      setNotice(describeAdminError(error, active ? "开启维护模式" : "结束维护模式"));
+    } finally {
+      setUpdateBusy(false);
+    }
+  }
+
+  async function dispatchUpdate() {
+    if (updateBusy || !updateConfigured) return;
+    if (!window.confirm("从 GitHub 发起部署更新？用户端和管理台将显示维护提示，更新完成后需要由部署流程或管理员关闭。")) return;
+    setUpdateBusy(true);
+    try {
+      const response = await adminFetch("/api/admin/system", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "dispatchUpdate" }),
+      });
+      const payload = await readAdminJson<{ maintenance: MaintenanceState; dispatched: true }>(response);
+      setMaintenance(payload.maintenance);
+      setNotice("GitHub 更新任务已发出，系统进入维护状态");
+    } catch (error) {
+      setNotice(describeAdminError(error, "发起 GitHub 更新"));
+    } finally {
+      setUpdateBusy(false);
+    }
+  }
+
+  async function signOut() {
+    try {
+      const response = await adminFetch("/api/admin/auth/logout", { method: "POST", cache: "no-store" });
+      await readAdminJson<{ loggedOut: true }>(response);
+    } catch {
+      // Clear the local authenticated view even if the server is temporarily unavailable.
+    } finally {
+      onSessionExpired();
     }
   }
 
@@ -554,6 +721,7 @@ export function AdminConsole() {
           <div><strong>NCPA</strong><small>FESTIVAL ACHIEVEMENT HUB</small></div>
         </Link>
         <nav>
+          <AdminNav active={section === "administrators"} onClick={openAdministratorPanel} icon={<Users size={18} />} label="管理员面板" />
           <AdminNav active={section === "overview"} onClick={returnToOverview} icon={<LayoutDashboard size={18} />} label="活动总览" />
           {!selectedEventId ? <AdminNav active={section === "new-activity"} onClick={showNewActivity} icon={<CirclePlus size={18} />} label="新建活动" /> : null}
           {selectedEventId ? (
@@ -567,17 +735,63 @@ export function AdminConsole() {
           ) : null}
         </nav>
         <div className="admin-sidebar-footer">
-          <span>服务器管理模式</span>
-          <p>配置与领取计数由数据库持久化</p>
+          <span>{session.user.role === "superadmin" ? "超级管理员" : "普通管理员"} · {session.user.username}</span>
+          <p>配置、账号与领取计数由数据库持久化</p>
+          <button type="button" onClick={() => void signOut()}><LogOut size={14} />安全退出</button>
           <Link href="/"><ArrowLeft size={14} />查看手机页面</Link>
         </div>
       </aside>
 
       <section className="admin-main">
         <header className="admin-topbar">
-          <div><span>{section === "overview" || section === "new-activity" ? "NCPA FESTIVAL ACHIEVEMENT HUB" : config.name}</span><h1>{sectionTitle(section)}</h1></div>
-          <div className="admin-status"><span className={onlineStatus === "online" ? "active" : ""} />{onlineStatus === "online" ? "校验服务器在线" : onlineStatus === "connecting" ? "正在同步" : "服务器连接失败"}</div>
+          <div><span>{section === "overview" || section === "new-activity" || section === "administrators" ? "NCPA FESTIVAL ACHIEVEMENT HUB" : config.name}</span><h1>{sectionTitle(section)}</h1></div>
+          <div className="admin-topbar-statuses">
+            {maintenance.active ? <div className="admin-maintenance-badge"><Wrench size={13} />维护中</div> : null}
+            <div className="admin-status"><span className={onlineStatus === "online" ? "active" : ""} />{onlineStatus === "online" ? "校验服务器在线" : onlineStatus === "connecting" ? "正在同步" : "服务器连接失败"}</div>
+          </div>
         </header>
+
+        {section === "administrators" ? (
+          <div className="admin-content administrator-layout">
+            <section className="admin-panel administrator-intro">
+              <div><span className="panel-kicker">ADMINISTRATORS</span><h2>管理员账号</h2><p>每位管理员使用自己的用户名和密码登录。普通管理员可以管理活动、成就、分类、活动包及更新，但不能新增或删除管理员。</p></div>
+              <div className="administrator-contact"><ShieldCheck size={18} /><span>如要联系增加管理员请联系2270027</span></div>
+            </section>
+
+            <div className="administrator-grid">
+              <section className="admin-panel administrator-list">
+                <div className="panel-heading"><div><span className="panel-kicker">ACCOUNTS</span><h2>账号列表</h2></div><Users size={20} /></div>
+                {admins.map((admin) => (
+                  <article key={admin.id}>
+                    <div className="administrator-avatar">{admin.username.slice(0, 1).toUpperCase()}</div>
+                    <div><strong>{admin.username}</strong><span>{admin.role === "superadmin" ? "超级管理员" : "普通管理员"}</span><small>{admin.lastLoginAt ? `最近登录 ${new Date(admin.lastLoginAt).toLocaleString("zh-CN")}` : "尚未登录"}</small></div>
+                    {session.user.role === "superadmin" && admin.role !== "superadmin" ? <button type="button" disabled={adminBusy} onClick={() => void removeAdministrator(admin.username)}><Trash2 size={14} />删除</button> : null}
+                  </article>
+                ))}
+              </section>
+
+              {session.user.role === "superadmin" ? (
+                <form className="admin-panel create-form administrator-create" onSubmit={addAdministrator}>
+                  <div className="panel-heading"><div><span className="panel-kicker">NEW ADMIN</span><h2>新增普通管理员</h2></div><UserPlus size={20} /></div>
+                  <label>用户名<input required minLength={3} maxLength={32} pattern="[a-z0-9][a-z0-9._-]{2,31}" value={adminUsername} onChange={(event) => setAdminUsername(event.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))} placeholder="例如 festival-editor" /><small>允许小写字母、数字、点、下划线和连字符。</small></label>
+                  <label>初始密码<input required type="password" autoComplete="new-password" minLength={12} maxLength={128} value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} /><small>至少12个字符，请通过安全渠道交给该管理员。</small></label>
+                  <button className="primary-admin-button" type="submit" disabled={adminBusy}><UserPlus size={16} />{adminBusy ? "正在创建" : "创建管理员"}</button>
+                </form>
+              ) : (
+                <section className="admin-panel administrator-restricted"><ShieldCheck size={28} /><h2>账号管理受限</h2><p>你的账号可以使用除新增和删除管理员之外的全部管理功能。</p></section>
+              )}
+            </div>
+
+            <section className={maintenance.active ? "admin-panel deployment-panel is-maintaining" : "admin-panel deployment-panel"}>
+              <div><span className="deployment-icon"><GitBranch size={22} /></span><div><span className="panel-kicker">GITHUB UPDATE</span><h2>从 GitHub 部署更新</h2><p>{updateConfigured ? "按钮会请求受限的 GitHub Actions 工作流更新服务器，不会向网页暴露 Docker 控制权限。" : "尚未配置 GitHub 更新令牌和部署工作流，按钮暂不可用。"}</p></div></div>
+              <div className="deployment-state"><span>{maintenance.active ? "维护提示已开启" : "系统正常开放"}</span>{maintenance.startedBy ? <small>由 {maintenance.startedBy} 开启</small> : null}</div>
+              <div className="deployment-actions">
+                {maintenance.active ? <button className="text-admin-button" type="button" disabled={updateBusy} onClick={() => void changeMaintenance(false)}><Check size={15} />结束维护</button> : <button className="text-admin-button" type="button" disabled={updateBusy} onClick={() => void changeMaintenance(true)}><Wrench size={15} />仅开启维护提示</button>}
+                <button className="primary-admin-button" type="button" disabled={updateBusy || !updateConfigured} onClick={() => void dispatchUpdate()}><RefreshCw size={15} />{updateBusy ? "正在处理" : "拉取 GitHub 更新"}</button>
+              </div>
+            </section>
+          </div>
+        ) : null}
 
         {section === "overview" ? (
           <div className="admin-content">
@@ -838,6 +1052,7 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 
 function sectionTitle(section: AdminSection) {
   return {
+    administrators: "管理员面板",
     overview: "活动总览",
     "new-activity": "新建活动",
     activity: "活动设置",

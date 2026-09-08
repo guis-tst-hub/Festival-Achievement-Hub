@@ -31,13 +31,14 @@ test("renders the generic idle mobile experience", async () => {
   assert.equal(response.headers.get("x-frame-options"), "SAMEORIGIN");
 });
 
-test("protects admin pages and APIs and renders with credentials", async () => {
-  assert.equal((await fetch(`http://127.0.0.1:${port}/admin`)).status, 401);
-  assert.equal((await fetch(`http://127.0.0.1:${port}/api/admin/festivals`)).status, 401);
-  const authorization = `Basic ${Buffer.from("test-admin:test-password-with-32-characters").toString("base64")}`;
-  const response = await fetch(`http://127.0.0.1:${port}/admin`, { headers: { authorization } });
+test("renders the administrator login while protected APIs reject unauthenticated requests", async () => {
+  const response = await fetch(`http://127.0.0.1:${port}/admin`);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
   assert.equal(response.headers.get("pragma"), "no-cache");
-  assert.match(await response.text(), /活动列表/);
+  assert.match(await response.text(), /正在确认管理员会话/);
+
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/admin/festivals`)).status, 401);
+  const authorization = `Basic ${Buffer.from("test-admin:test-password-with-32-characters").toString("base64")}`;
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/admin/festivals`, { headers: { authorization } })).status, 401);
 });

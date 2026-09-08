@@ -7,6 +7,7 @@ import {
 } from "../../../../db/activity-packages";
 import { MAX_PACKAGE_BYTES, parseActivityPackage } from "../../../lib/activity-package";
 import { apiError, HttpError, noStoreJson, requireSameOrigin } from "../../../lib/server-http";
+import { requireAdminSession } from "../../../lib/admin-auth";
 
 const eventIdPattern = /^[a-z0-9][a-z0-9-]{2,63}$/;
 
@@ -18,6 +19,7 @@ function readEventId(request: Request) {
 
 export async function GET(request: Request) {
   try {
+    await requireAdminSession(request);
     const eventId = readEventId(request);
     return noStoreJson({ package: await getActivityPackageSummary(eventId) });
   } catch (error) {
@@ -28,6 +30,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
+    await requireAdminSession(request, { csrf: true });
     const declaredLength = Number(request.headers.get("content-length") ?? 0);
     if (Number.isFinite(declaredLength) && declaredLength > MAX_PACKAGE_BYTES + 1024 * 1024) {
       throw new HttpError(413, "activity package is too large", "PAYLOAD_TOO_LARGE");
@@ -60,6 +63,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     requireSameOrigin(request);
+    await requireAdminSession(request, { csrf: true });
     const eventId = readEventId(request);
     const removed = await deleteActivityPackage(eventId);
     if (!removed) return noStoreJson({ code: "PACKAGE_NOT_FOUND", error: "activity package not found" }, { status: 404 });

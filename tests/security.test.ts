@@ -6,6 +6,45 @@ import { defaultFestivalConfig } from "../app/lib/demo-store";
 import { toPublicFestivalConfig } from "../db/claims";
 import { HttpError, requireSameOrigin } from "../app/lib/server-http";
 import { createClientId } from "../app/lib/client-id";
+import {
+  adminUsernamePattern,
+  createAdminSessionCookie,
+  hashAdminPassword,
+  normalizeAdminUsername,
+  validateAdminPassword,
+  verifyAdminPassword,
+} from "../app/lib/admin-auth";
+
+test("administrator passwords use salted scrypt hashes", async () => {
+  const password = "Correct-Horse-2026";
+  const first = await hashAdminPassword(password);
+  const second = await hashAdminPassword(password);
+
+  assert.match(first, /^scrypt\$16384\$8\$1\$/);
+  assert.notEqual(first, second);
+  assert.ok(!first.includes(password));
+  assert.equal(await verifyAdminPassword(password, first), true);
+  assert.equal(await verifyAdminPassword("Wrong-Password-2026", first), false);
+  assert.equal(await verifyAdminPassword(password, "not-a-password-hash"), false);
+});
+
+test("administrator credentials apply strict normalization and length rules", () => {
+  assert.equal(normalizeAdminUsername("  Event.Admin  "), "event.admin");
+  assert.equal(adminUsernamePattern.test("event.admin"), true);
+  assert.equal(adminUsernamePattern.test("管理员"), false);
+  assert.equal(validateAdminPassword("short"), false);
+  assert.equal(validateAdminPassword("long-enough-2026"), true);
+});
+
+test("administrator session cookies are HttpOnly and become Secure on HTTPS", () => {
+  const httpCookie = createAdminSessionCookie("test-token", new Request("http://192.168.1.20/admin"));
+  const httpsCookie = createAdminSessionCookie("test-token", new Request("https://festival.example.edu/admin"));
+
+  assert.match(httpCookie, /HttpOnly/);
+  assert.match(httpCookie, /SameSite=Lax/);
+  assert.doesNotMatch(httpCookie, /; Secure/);
+  assert.match(httpsCookie, /; Secure/);
+});
 
 test("public festival configuration does not expose claim codes", () => {
   const publicConfig = toPublicFestivalConfig(defaultFestivalConfig);

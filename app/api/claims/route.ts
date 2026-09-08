@@ -2,9 +2,14 @@ import { getClaimIdentity } from "../../lib/claim-identity";
 import { apiError, noStoreJson, readJson } from "../../lib/server-http";
 import { claimRequestSchema } from "../../lib/validation";
 import { claimOnline, consumeClaimRateLimit } from "../../../db/claims";
+import { getMaintenanceState } from "../../lib/system-settings";
 
 export async function POST(request: Request) {
   try {
+    const maintenance = await getMaintenanceState();
+    if (maintenance.active) {
+      return noStoreJson({ code: "MAINTENANCE_ACTIVE", error: maintenance.message }, { status: 503 });
+    }
     const payload = claimRequestSchema.parse(await readJson(request, 8 * 1024));
     const identity = await getClaimIdentity(request);
     const deviceLimit = consumeClaimRateLimit(`device:${identity.deviceRateKey}`, 12, 60);

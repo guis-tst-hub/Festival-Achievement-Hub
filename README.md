@@ -9,7 +9,9 @@
 - 服务端签名的匿名设备 Cookie；原始设备标识不会写入数据库
 - 数据库支持的设备与来源地址速率限制
 - 多活动、分类、成就、开放状态和领取计数管理
-- 受 HTTP Basic Auth、同源检查和运行时数据校验保护的管理接口
+- 数据库管理员账号、8 小时安全会话、CSRF 和同源检查保护的管理接口
+- 超级管理员可管理普通管理员；普通管理员仍可管理活动、成就、分类、活动包和系统更新
+- 管理台可触发受控 GitHub Actions 部署，并在更新期间向前后端展示维护状态
 - 访客接口不会暴露二维码识别码
 
 浏览器中的展示进度保存在 `localStorage`，属于匿名、单设备体验；服务器保存不可逆设备哈希和权威领取计数。项目不提供用户账户或跨设备进度同步。
@@ -53,6 +55,12 @@ docker compose down -v       # 会永久删除数据库，请谨慎
 完整备份、恢复、监控和回滚步骤见 [`docs/operations.md`](docs/operations.md)。
 
 学校本地服务器通过 GitHub Actions、GHCR和生产 Compose发布的完整流程见 [`docs/school-server-deployment.md`](docs/school-server-deployment.md)。
+
+## 管理员账号
+
+数据库中尚无管理员时，首次登录会使用 `.env` 中的 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 创建唯一的超级管理员。之后这两个变量只作为首次初始化配置，普通管理员由超级管理员在“管理员面板”中创建，每位管理员均使用自己的用户名和密码登录。
+
+如需让管理台的“拉取 GitHub 更新”按钮生效，还需按照 [`docs/school-server-deployment.md`](docs/school-server-deployment.md) 配置服务器上的自托管 GitHub Actions Runner，以及具有目标仓库 `Actions: Write` 权限的细粒度令牌。网站不会访问 Docker Socket。
 
 ## 活动包
 

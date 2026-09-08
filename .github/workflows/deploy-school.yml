@@ -1,0 +1,71 @@
+name: Deploy school server
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: school-production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64, festival-hub-school]
+    timeout-minutes: 30
+    env:
+      DEPLOY_ENV_FILE: /home/tst-student/festival-hub-prod/.env
+      COMPOSE_PROJECT_NAME: festival-achievement-hub
+    steps:
+      - name: Check out reviewed main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Verify deployment environment
+        run: |
+          test -f "$DEPLOY_ENV_FILE"
+          docker compose --env-file "$DEPLOY_ENV_FILE" -f compose.production.yaml config --quiet
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify source before deployment
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run check:deployment
+          npm run audit:production
+
+      - name: Build server image
+        run: docker build --pull --tag "festival-achievement-hub:school-${GITHUB_SHA}" .
+
+      - name: Deploy and wait for health
+        env:
+          APP_IMAGE: festival-achievement-hub:school-${{ github.sha }}
+        run: docker compose --env-file "$DEPLOY_ENV_FILE" -f compose.production.yaml up -d --wait --wait-timeout 120
+
+      - name: End maintenance after successful deployment
+        env:
+          APP_IMAGE: festival-achievement-hub:school-${{ github.sha }}
+        run: |
+          docker compose --env-file "$DEPLOY_ENV_FILE" -f compose.production.yaml exec -T db \
+            sh -c 'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+          UPDATE app_settings
+          SET value_json = '{"active":false,"message":"系统正在维护，请稍后再试。","startedAt":null,"startedBy":null}',
+              updated_by = 'github-actions',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE key = 'maintenance';
+          SQL
+
+      - name: Show running services
+        if: always()
+        env:
+          APP_IMAGE: festival-achievement-hub:school-${{ github.sha }}
+        run: docker compose --env-file "$DEPLOY_ENV_FILE" -f compose.production.yaml ps
