@@ -675,7 +675,7 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
   }
 
   async function dispatchUpdate() {
-    if (updateBusy || !updateConfigured) return;
+    if (updateBusy || !updateConfigured || session.user.role !== "superadmin") return;
     if (!window.confirm("从 GitHub 发起部署更新？用户端和管理台将显示维护提示，更新完成后需要由部署流程或管理员关闭。")) return;
     setUpdateBusy(true);
     try {
@@ -754,7 +754,7 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
         {section === "administrators" ? (
           <div className="admin-content administrator-layout">
             <section className="admin-panel administrator-intro">
-              <div><span className="panel-kicker">ADMINISTRATORS</span><h2>管理员账号</h2><p>每位管理员使用自己的用户名和密码登录。普通管理员可以管理活动、成就、分类、活动包及更新，但不能新增或删除管理员。</p></div>
+              <div><span className="panel-kicker">ADMINISTRATORS</span><h2>管理员账号</h2><p>每位管理员使用自己的用户名和密码登录。普通管理员可以管理活动、成就、分类、活动包及维护提示，但不能管理账号或拉取 GitHub 更新。</p></div>
               <div className="administrator-contact"><ShieldCheck size={18} /><span>如要联系增加管理员请联系2270027</span></div>
             </section>
 
@@ -778,16 +778,16 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
                   <button className="primary-admin-button" type="submit" disabled={adminBusy}><UserPlus size={16} />{adminBusy ? "正在创建" : "创建管理员"}</button>
                 </form>
               ) : (
-                <section className="admin-panel administrator-restricted"><ShieldCheck size={28} /><h2>账号管理受限</h2><p>你的账号可以使用除新增和删除管理员之外的全部管理功能。</p></section>
+                <section className="admin-panel administrator-restricted"><ShieldCheck size={28} /><h2>超级管理员功能受限</h2><p>你的账号不能新增、删除管理员，也不能拉取 GitHub 更新；其他活动管理功能不受影响。</p></section>
               )}
             </div>
 
             <section className={maintenance.active ? "admin-panel deployment-panel is-maintaining" : "admin-panel deployment-panel"}>
-              <div><span className="deployment-icon"><GitBranch size={22} /></span><div><span className="panel-kicker">GITHUB UPDATE</span><h2>从 GitHub 部署更新</h2><p>{updateConfigured ? "按钮会请求受限的 GitHub Actions 工作流更新服务器，不会向网页暴露 Docker 控制权限。" : "尚未配置 GitHub 更新令牌和部署工作流，按钮暂不可用。"}</p></div></div>
+              <div><span className="deployment-icon"><GitBranch size={22} /></span><div><span className="panel-kicker">GITHUB UPDATE</span><h2>从 GitHub 部署更新</h2><p>{session.user.role !== "superadmin" ? "拉取 GitHub 更新仅限超级管理员，普通管理员仍可开启或结束维护提示。" : updateConfigured ? "按钮会请求受限的 GitHub Actions 工作流更新服务器，不会向网页暴露 Docker 控制权限。" : "尚未配置 GitHub 更新令牌和部署工作流，按钮暂不可用。"}</p></div></div>
               <div className="deployment-state"><span>{maintenance.active ? "维护提示已开启" : "系统正常开放"}</span>{maintenance.startedBy ? <small>由 {maintenance.startedBy} 开启</small> : null}</div>
               <div className="deployment-actions">
                 {maintenance.active ? <button className="text-admin-button" type="button" disabled={updateBusy} onClick={() => void changeMaintenance(false)}><Check size={15} />结束维护</button> : <button className="text-admin-button" type="button" disabled={updateBusy} onClick={() => void changeMaintenance(true)}><Wrench size={15} />仅开启维护提示</button>}
-                <button className="primary-admin-button" type="button" disabled={updateBusy || !updateConfigured} onClick={() => void dispatchUpdate()}><RefreshCw size={15} />{updateBusy ? "正在处理" : "拉取 GitHub 更新"}</button>
+                <button className="primary-admin-button" type="button" disabled={updateBusy || !updateConfigured || session.user.role !== "superadmin"} onClick={() => void dispatchUpdate()}><RefreshCw size={15} />{session.user.role !== "superadmin" ? "仅超级管理员可更新" : updateBusy ? "正在处理" : "拉取 GitHub 更新"}</button>
               </div>
             </section>
           </div>

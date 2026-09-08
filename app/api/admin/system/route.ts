@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { logAdminAudit, requireAdminSession } from "../../../lib/admin-auth";
-import { apiError, noStoreJson, readJson, requireSameOrigin } from "../../../lib/server-http";
+import { apiError, HttpError, noStoreJson, readJson, requireSameOrigin } from "../../../lib/server-http";
 import { dispatchGitHubUpdate, getMaintenanceState, githubUpdateConfigured, setMaintenanceState } from "../../../lib/system-settings";
 
 const systemActionSchema = z.discriminatedUnion("action", [
@@ -26,6 +26,10 @@ export async function POST(request: Request) {
       const maintenance = await setMaintenanceState(input.active, session.principal.username, input.message);
       await logAdminAudit(session.principal.username, "maintenance.set", input.active ? "active" : "inactive", {});
       return noStoreJson({ maintenance, updateConfigured: githubUpdateConfigured() });
+    }
+
+    if (session.principal.role !== "superadmin") {
+      throw new HttpError(403, "super administrator permission required", "SUPERADMIN_REQUIRED");
     }
 
     const maintenance = await setMaintenanceState(true, session.principal.username, "系统正在部署更新，请稍后再试。");
