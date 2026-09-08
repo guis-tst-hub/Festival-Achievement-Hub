@@ -78,7 +78,7 @@ export async function dispatchGitHubUpdate() {
     body: JSON.stringify({ ref }),
     signal: AbortSignal.timeout(15_000),
   });
-  if (response.status !== 204) {
+  if (!response.ok) {
     const detail = (await response.text()).slice(0, 300);
     throw new HttpError(502, `GitHub rejected update request (${response.status}): ${detail}`, "GITHUB_UPDATE_FAILED");
   }

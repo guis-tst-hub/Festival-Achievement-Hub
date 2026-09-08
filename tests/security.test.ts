@@ -14,6 +14,30 @@ import {
   validateAdminPassword,
   verifyAdminPassword,
 } from "../app/lib/admin-auth";
+import { dispatchGitHubUpdate } from "../app/lib/system-settings";
+
+test("GitHub update dispatch accepts successful responses with a response body", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousToken = process.env.GITHUB_UPDATE_TOKEN;
+  const previousRepository = process.env.GITHUB_UPDATE_REPOSITORY;
+  const previousWorkflow = process.env.GITHUB_UPDATE_WORKFLOW;
+  process.env.GITHUB_UPDATE_TOKEN = "test-token";
+  process.env.GITHUB_UPDATE_REPOSITORY = "example/festival-hub";
+  process.env.GITHUB_UPDATE_WORKFLOW = "deploy-school.yml";
+  globalThis.fetch = async () => Response.json({ workflow_run_id: 123 }, { status: 200 });
+
+  try {
+    await assert.doesNotReject(() => dispatchGitHubUpdate());
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.GITHUB_UPDATE_TOKEN;
+    else process.env.GITHUB_UPDATE_TOKEN = previousToken;
+    if (previousRepository === undefined) delete process.env.GITHUB_UPDATE_REPOSITORY;
+    else process.env.GITHUB_UPDATE_REPOSITORY = previousRepository;
+    if (previousWorkflow === undefined) delete process.env.GITHUB_UPDATE_WORKFLOW;
+    else process.env.GITHUB_UPDATE_WORKFLOW = previousWorkflow;
+  }
+});
 
 test("administrator passwords use salted scrypt hashes", async () => {
   const password = "Correct-Horse-2026";
