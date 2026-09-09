@@ -121,6 +121,7 @@ const ACHIEVEMENT_EMOJIS = [
   "✦", "★", "✓", "☀️", "🌙", "⚡", "🔥", "🎉",
   "🏆", "🎭", "🎨", "🎵", "📚", "🔬", "⚽", "🧩",
   "🌟", "💡", "🕯️", "👻", "🎃", "🎄", "🦇", "🔑",
+  "🏀", "💩", "😄",
 ];
 
 const emptyAchievement: Omit<FestivalAchievement, "id"> = {
@@ -157,6 +158,7 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
   const [qrPreview, setQrPreview] = useState<AchievementQrPreview | null>(null);
   const [qrBusyId, setQrBusyId] = useState<string | null>(null);
   const [emojiTarget, setEmojiTarget] = useState<EmojiTarget | null>(null);
+  const [emojiInput, setEmojiInput] = useState("");
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [activityPackage, setActivityPackage] = useState<ActivityPackageSummary | null>(null);
   const [packageLoading, setPackageLoading] = useState(false);
@@ -489,20 +491,38 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
     }
   }
 
+  function openEmojiPicker(target: EmojiTarget) {
+    const currentIcon = target.kind === "draft"
+      ? draft.icon
+      : config.achievements.find((achievement) => achievement.id === target.achievementId)?.icon ?? "";
+    setEmojiInput(currentIcon.length <= 32 ? currentIcon : "");
+    setEmojiTarget(target);
+  }
+
+  function closeEmojiPicker() {
+    setEmojiTarget(null);
+    setEmojiInput("");
+  }
+
   function chooseEmoji(emoji: string) {
     if (!emojiTarget) return;
+    const nextIcon = emoji.trim();
+    if (!nextIcon) {
+      setNotice("[EMOJI_REQUIRED] 请输入或选择一个 Emoji");
+      return;
+    }
     if (emojiTarget.kind === "draft") {
-      setDraft((current) => ({ ...current, icon: emoji }));
-      setNotice("已选择 Emoji 图案");
+      setDraft((current) => ({ ...current, icon: nextIcon }));
+      setNotice("已设置 Emoji 图案");
     } else {
       persist({
         ...config,
         achievements: config.achievements.map((achievement) =>
-          achievement.id === emojiTarget.achievementId ? { ...achievement, icon: emoji } : achievement,
+          achievement.id === emojiTarget.achievementId ? { ...achievement, icon: nextIcon } : achievement,
         ),
       }, "成就图案已更新");
     }
-    setEmojiTarget(null);
+    closeEmojiPicker();
   }
 
   async function loadActivityPackage(eventId: string) {
@@ -874,7 +894,7 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
                         <strong>{achievement.name}</strong>
                         <small>{achievement.claimCode} · {config.categories.find((category) => category.id === achievement.categoryId)?.name ?? defaultAchievementCategory.name}</small>
                         <div className="admin-icon-controls">
-                          <button onClick={() => setEmojiTarget({ kind: "achievement", achievementId: achievement.id })}><SmilePlus size={11} />选择 Emoji</button>
+                          <button onClick={() => openEmojiPicker({ kind: "achievement", achievementId: achievement.id })}><SmilePlus size={11} />选择或输入 Emoji</button>
                         </div>
                       </div>
                       <div className="claim-limit-editor">
@@ -903,7 +923,7 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
                   <strong>成就图案</strong>
                   <small>使用内置 Emoji，避免将大型二进制内容写入数据库。</small>
                   <div className="new-achievement-icon-actions">
-                    <button type="button" onClick={() => setEmojiTarget({ kind: "draft" })}><SmilePlus size={13} />选择 Emoji</button>
+                    <button type="button" onClick={() => openEmojiPicker({ kind: "draft" })}><SmilePlus size={13} />选择或输入 Emoji</button>
                   </div>
                 </div>
               </div>
@@ -1013,14 +1033,28 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
       {emojiTarget ? (
         <div className="admin-qr-overlay" role="dialog" aria-modal="true" aria-label="选择成就 Emoji 图案">
           <div className="admin-emoji-dialog">
-            <button className="admin-qr-close" onClick={() => setEmojiTarget(null)} aria-label="关闭 Emoji 选择"><X size={19} /></button>
+            <button className="admin-qr-close" onClick={closeEmojiPicker} aria-label="关闭 Emoji 选择"><X size={19} /></button>
             <span className="admin-qr-icon"><SmilePlus size={20} /></span>
             <p className="panel-kicker">EMOJI ICON</p>
             <h2>选择成就图案</h2>
-            <p>没有上传图片时，可以使用下面的 Emoji。</p>
+            <p>选择下方图案，或使用系统 Emoji 键盘直接输入。</p>
+            <form className="achievement-emoji-custom" onSubmit={(event) => { event.preventDefault(); chooseEmoji(emojiInput); }}>
+              <label htmlFor="achievement-emoji-input">输入 Emoji 或特殊字符</label>
+              <div>
+                <input
+                  id="achievement-emoji-input"
+                  value={emojiInput}
+                  onChange={(event) => setEmojiInput(event.target.value)}
+                  placeholder="例如：🏀 💩 😄"
+                  maxLength={32}
+                />
+                <button type="submit" disabled={!emojiInput.trim()}>使用</button>
+              </div>
+              <small>Windows：Win + . · macOS：Control + Command + Space</small>
+            </form>
             <div className="achievement-emoji-grid">
               {ACHIEVEMENT_EMOJIS.map((emoji) => (
-                <button key={emoji} onClick={() => chooseEmoji(emoji)} aria-label={`使用 ${emoji} 作为成就图案`}>{emoji}</button>
+                <button type="button" key={emoji} onClick={() => chooseEmoji(emoji)} aria-label={`使用 ${emoji} 作为成就图案`}>{emoji}</button>
               ))}
             </div>
           </div>
