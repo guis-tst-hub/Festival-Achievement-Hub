@@ -1945,6 +1945,62 @@ a {
   font-size: 9px;
 }
 
+.achievement-emoji-custom {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 15px;
+  text-align: left;
+}
+
+.achievement-emoji-custom label {
+  color: #6e675d;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.achievement-emoji-custom > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+}
+
+.achievement-emoji-custom input {
+  min-width: 0;
+  border: 1px solid #dcd4c5;
+  border-radius: 9px;
+  padding: 9px 11px;
+  outline: none;
+  color: #29252d;
+  background: #fbf9f3;
+  font-family: system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  font-size: 18px;
+}
+
+.achievement-emoji-custom input:focus {
+  border-color: #a8894c;
+}
+
+.achievement-emoji-custom button {
+  border: 1px solid #a8894c;
+  border-radius: 9px;
+  padding: 0 15px;
+  color: #fff;
+  background: #7b5d24;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.achievement-emoji-custom button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.achievement-emoji-custom small {
+  color: #938b80;
+  font-size: 7.5px;
+}
+
 .achievement-emoji-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
