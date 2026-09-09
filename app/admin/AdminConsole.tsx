@@ -117,13 +117,6 @@ type ActivityPackageSummary = {
   updatedAt: string;
 };
 
-const ACHIEVEMENT_EMOJIS = [
-  "✦", "★", "✓", "☀️", "🌙", "⚡", "🔥", "🎉",
-  "🏆", "🎭", "🎨", "🎵", "📚", "🔬", "⚽", "🧩",
-  "🌟", "💡", "🕯️", "👻", "🎃", "🎄", "🦇", "🔑",
-  "🏀", "💩", "😄",
-];
-
 const emptyAchievement: Omit<FestivalAchievement, "id"> = {
   claimCode: "",
   name: "",
@@ -894,7 +887,7 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
                         <strong>{achievement.name}</strong>
                         <small>{achievement.claimCode} · {config.categories.find((category) => category.id === achievement.categoryId)?.name ?? defaultAchievementCategory.name}</small>
                         <div className="admin-icon-controls">
-                          <button onClick={() => openEmojiPicker({ kind: "achievement", achievementId: achievement.id })}><SmilePlus size={11} />选择或输入 Emoji</button>
+                          <button onClick={() => openEmojiPicker({ kind: "achievement", achievementId: achievement.id })}><SmilePlus size={11} />输入 Emoji</button>
                         </div>
                       </div>
                       <div className="claim-limit-editor">
@@ -923,7 +916,7 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
                   <strong>成就图案</strong>
                   <small>使用内置 Emoji，避免将大型二进制内容写入数据库。</small>
                   <div className="new-achievement-icon-actions">
-                    <button type="button" onClick={() => openEmojiPicker({ kind: "draft" })}><SmilePlus size={13} />选择或输入 Emoji</button>
+                    <button type="button" onClick={() => openEmojiPicker({ kind: "draft" })}><SmilePlus size={13} />输入 Emoji</button>
                   </div>
                 </div>
               </div>
@@ -1031,13 +1024,13 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
       ) : null}
 
       {emojiTarget ? (
-        <div className="admin-qr-overlay" role="dialog" aria-modal="true" aria-label="选择成就 Emoji 图案">
+        <div className="admin-qr-overlay" role="dialog" aria-modal="true" aria-label="输入成就 Emoji 图案">
           <div className="admin-emoji-dialog">
-            <button className="admin-qr-close" onClick={closeEmojiPicker} aria-label="关闭 Emoji 选择"><X size={19} /></button>
+            <button className="admin-qr-close" onClick={closeEmojiPicker} aria-label="关闭 Emoji 输入"><X size={19} /></button>
             <span className="admin-qr-icon"><SmilePlus size={20} /></span>
             <p className="panel-kicker">EMOJI ICON</p>
-            <h2>选择成就图案</h2>
-            <p>选择下方图案，或使用系统 Emoji 键盘直接输入。</p>
+            <h2>输入成就图案</h2>
+            <p>输入或粘贴 Emoji、符号等文本，网站会直接显示。</p>
             <form className="achievement-emoji-custom" onSubmit={(event) => { event.preventDefault(); chooseEmoji(emojiInput); }}>
               <label htmlFor="achievement-emoji-input">输入 Emoji 或特殊字符</label>
               <div>
@@ -1052,11 +1045,6 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
               </div>
               <small>Windows：Win + . · macOS：Control + Command + Space</small>
             </form>
-            <div className="achievement-emoji-grid">
-              {ACHIEVEMENT_EMOJIS.map((emoji) => (
-                <button type="button" key={emoji} onClick={() => chooseEmoji(emoji)} aria-label={`使用 ${emoji} 作为成就图案`}>{emoji}</button>
-              ))}
-            </div>
           </div>
         </div>
       ) : null}
