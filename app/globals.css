@@ -2001,27 +2001,6 @@ a {
   font-size: 7.5px;
 }
 
-.achievement-emoji-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 7px;
-}
-
-.achievement-emoji-grid button {
-  aspect-ratio: 1;
-  border: 1px solid #e2dacd;
-  border-radius: 10px;
-  background: #faf7f0;
-  font-size: 22px;
-  cursor: pointer;
-}
-
-.achievement-emoji-grid button:hover,
-.achievement-emoji-grid button:focus-visible {
-  border-color: #b58a38;
-  background: #f7ebc8;
-}
-
 .manual-claim button:disabled {
   cursor: wait;
   opacity: 0.55;
