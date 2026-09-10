@@ -38,7 +38,7 @@ export function normalizeAdminUsername(value: string) {
 }
 
 export function validateAdminPassword(password: string) {
-  return password.length >= 12 && password.length <= 128;
+  return password.length >= 1 && password.length <= 128;
 }
 
 function sha256(value: string) {
@@ -56,7 +56,7 @@ function deriveKey(password: string, salt: Buffer, cost = SCRYPT_COST, blockSize
 
 export async function hashAdminPassword(password: string) {
   if (!validateAdminPassword(password)) {
-    throw new HttpError(400, "password must be between 12 and 128 characters", "ADMIN_PASSWORD_INVALID");
+    throw new HttpError(400, "password must be between 1 and 128 characters", "ADMIN_PASSWORD_INVALID");
   }
   const salt = randomBytes(16);
   const key = await deriveKey(password, salt);

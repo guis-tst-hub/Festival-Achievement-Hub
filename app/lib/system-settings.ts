@@ -57,6 +57,12 @@ export function githubUpdateConfigured() {
   );
 }
 
+export function getCurrentAppVersion() {
+  const version = process.env.APP_VERSION?.trim();
+  if (!version) return "development";
+  return version.slice(0, 64);
+}
+
 export async function dispatchGitHubUpdate() {
   const token = process.env.GITHUB_UPDATE_TOKEN ?? "";
   const repository = process.env.GITHUB_UPDATE_REPOSITORY ?? "";

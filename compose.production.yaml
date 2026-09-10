@@ -48,6 +48,7 @@ services:
       GITHUB_UPDATE_REPOSITORY: ${GITHUB_UPDATE_REPOSITORY:-}
       GITHUB_UPDATE_WORKFLOW: ${GITHUB_UPDATE_WORKFLOW:-}
       GITHUB_UPDATE_REF: ${GITHUB_UPDATE_REF:-main}
+      APP_VERSION: ${APP_VERSION:-development}
       # Enable only when a trusted reverse proxy is the sole entry point.
       TRUST_PROXY_HEADERS: "${TRUST_PROXY_HEADERS:-false}"
     ports:

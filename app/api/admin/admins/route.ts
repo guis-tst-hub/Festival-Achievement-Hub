@@ -4,7 +4,7 @@ import { apiError, noStoreJson, readJson, requireSameOrigin } from "../../../lib
 
 const createSchema = z.object({
   username: z.string().min(3).max(32),
-  password: z.string().min(12).max(128),
+  password: z.string().min(1).max(128),
 }).strict();
 
 export async function GET(request: Request) {

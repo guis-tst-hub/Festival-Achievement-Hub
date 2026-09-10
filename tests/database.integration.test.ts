@@ -24,7 +24,9 @@ test("database enforces concurrent, duplicate, and configured reset limits", { s
     const results = await Promise.all(Array.from({ length: 10 }, (_, index) => claimOnline(eventId, "integration-code", `device-${index}`)));
     assert.equal(results.filter((result) => result.status === "claimed").length, 3);
     assert.equal(results.filter((result) => result.status === "limit_reached").length, 7);
-    assert.equal((await claimOnline(eventId, "integration-code", "device-0")).status, "already");
+    const claimedDeviceIndex = results.findIndex((result) => result.status === "claimed");
+    assert.notEqual(claimedDeviceIndex, -1);
+    assert.equal((await claimOnline(eventId, "integration-code", `device-${claimedDeviceIndex}`)).status, "already");
 
     await syncFestivalConfig({
       eventId,

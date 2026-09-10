@@ -56,8 +56,10 @@ test("administrator credentials apply strict normalization and length rules", ()
   assert.equal(normalizeAdminUsername("  Event.Admin  "), "event.admin");
   assert.equal(adminUsernamePattern.test("event.admin"), true);
   assert.equal(adminUsernamePattern.test("管理员"), false);
-  assert.equal(validateAdminPassword("short"), false);
+  assert.equal(validateAdminPassword(""), false);
+  assert.equal(validateAdminPassword("short"), true);
   assert.equal(validateAdminPassword("long-enough-2026"), true);
+  assert.equal(validateAdminPassword("x".repeat(129)), false);
 });
 
 test("administrator session cookies are HttpOnly and become Secure on HTTPS", () => {
