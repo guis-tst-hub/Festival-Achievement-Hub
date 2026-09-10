@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
-    const session = await requireAdminSession(request, { csrf: true, superadmin: true });
+    const session = await requireAdminSession(request, { csrf: true });
     const input = createSchema.parse(await readJson(request, 8 * 1024));
     return noStoreJson({ admin: await createAdmin(session.principal, input.username, input.password) }, { status: 201 });
   } catch (error) {
