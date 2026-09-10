@@ -626,7 +626,7 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
 
   async function addAdministrator(event: FormEvent) {
     event.preventDefault();
-    if (adminBusy || session.user.role !== "superadmin") return;
+    if (adminBusy) return;
     setAdminBusy(true);
     try {
       const response = await adminFetch("/api/admin/admins", {
@@ -767,8 +767,8 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
         {section === "administrators" ? (
           <div className="admin-content administrator-layout">
             <section className="admin-panel administrator-intro">
-              <div><span className="panel-kicker">ADMINISTRATORS</span><h2>管理员账号</h2><p>每位管理员使用自己的用户名和密码登录。普通管理员可以管理活动、成就、分类、活动包及维护提示，但不能管理账号或拉取 GitHub 更新。</p></div>
-              <div className="administrator-contact"><ShieldCheck size={18} /><span>如要联系增加管理员请联系2270027</span></div>
+              <div><span className="panel-kicker">ADMINISTRATORS</span><h2>管理员账号</h2><p>每位管理员使用自己的用户名和密码登录。所有管理员都可以创建普通管理员；删除管理员和拉取 GitHub 更新仍仅限超级管理员。</p></div>
+              <div className="administrator-contact"><ShieldCheck size={18} /><span>新增账号默认拥有普通管理员权限</span></div>
             </section>
 
             <div className="administrator-grid">
@@ -783,16 +783,12 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
                 ))}
               </section>
 
-              {session.user.role === "superadmin" ? (
-                <form className="admin-panel create-form administrator-create" onSubmit={addAdministrator}>
-                  <div className="panel-heading"><div><span className="panel-kicker">NEW ADMIN</span><h2>新增普通管理员</h2></div><UserPlus size={20} /></div>
-                  <label>用户名<input required minLength={3} maxLength={32} pattern="[a-z0-9][a-z0-9._-]{2,31}" value={adminUsername} onChange={(event) => setAdminUsername(event.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))} placeholder="例如 festival-editor" /><small>允许小写字母、数字、点、下划线和连字符。</small></label>
-                  <label>初始密码<input required type="password" autoComplete="new-password" minLength={12} maxLength={128} value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} /><small>至少12个字符，请通过安全渠道交给该管理员。</small></label>
-                  <button className="primary-admin-button" type="submit" disabled={adminBusy}><UserPlus size={16} />{adminBusy ? "正在创建" : "创建管理员"}</button>
-                </form>
-              ) : (
-                <section className="admin-panel administrator-restricted"><ShieldCheck size={28} /><h2>超级管理员功能受限</h2><p>你的账号不能新增、删除管理员，也不能拉取 GitHub 更新；其他活动管理功能不受影响。</p></section>
-              )}
+              <form className="admin-panel create-form administrator-create" onSubmit={addAdministrator}>
+                <div className="panel-heading"><div><span className="panel-kicker">NEW ADMIN</span><h2>新增普通管理员</h2></div><UserPlus size={20} /></div>
+                <label>用户名<input required minLength={3} maxLength={32} pattern="[a-z0-9][a-z0-9._-]{2,31}" value={adminUsername} onChange={(event) => setAdminUsername(event.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))} placeholder="例如 festival-editor" /><small>允许小写字母、数字、点、下划线和连字符。</small></label>
+                <label>初始密码<input required type="password" autoComplete="new-password" minLength={12} maxLength={128} value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} /><small>至少12个字符，请通过安全渠道交给该管理员。</small></label>
+                <button className="primary-admin-button" type="submit" disabled={adminBusy}><UserPlus size={16} />{adminBusy ? "正在创建" : "创建管理员"}</button>
+              </form>
             </div>
 
             <section className={maintenance.active ? "admin-panel deployment-panel is-maintaining" : "admin-panel deployment-panel"}>
