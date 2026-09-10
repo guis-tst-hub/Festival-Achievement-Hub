@@ -163,6 +163,7 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
   const [adminBusy, setAdminBusy] = useState(false);
   const [maintenance, setMaintenance] = useState<MaintenanceState>({ active: false, message: "系统正在维护，请稍后再试。", startedAt: null, startedBy: null });
   const [updateConfigured, setUpdateConfigured] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState("development");
   const [updateBusy, setUpdateBusy] = useState(false);
 
   const adminFetch = useCallback(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -607,10 +608,11 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
         adminFetch("/api/admin/system", { cache: "no-store" }),
       ]);
       const adminPayload = await readAdminJson<{ admins: AdminListItem[] }>(adminsResponse);
-      const systemPayload = await readAdminJson<{ maintenance: MaintenanceState; updateConfigured: boolean }>(systemResponse);
+      const systemPayload = await readAdminJson<{ maintenance: MaintenanceState; updateConfigured: boolean; currentVersion: string }>(systemResponse);
       setAdmins(adminPayload.admins);
       setMaintenance(systemPayload.maintenance);
       setUpdateConfigured(systemPayload.updateConfigured);
+      setCurrentVersion(systemPayload.currentVersion);
       setOnlineStatus("online");
     } catch (error) {
       setOnlineStatus("error");
@@ -786,14 +788,14 @@ export function AdminConsole({ session, onSessionExpired }: { session: AdminUiSe
               <form className="admin-panel create-form administrator-create" onSubmit={addAdministrator}>
                 <div className="panel-heading"><div><span className="panel-kicker">NEW ADMIN</span><h2>新增普通管理员</h2></div><UserPlus size={20} /></div>
                 <label>用户名<input required minLength={3} maxLength={32} pattern="[a-z0-9][a-z0-9._-]{2,31}" value={adminUsername} onChange={(event) => setAdminUsername(event.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))} placeholder="例如 festival-editor" /><small>允许小写字母、数字、点、下划线和连字符。</small></label>
-                <label>初始密码<input required type="password" autoComplete="new-password" minLength={12} maxLength={128} value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} /><small>至少12个字符，请通过安全渠道交给该管理员。</small></label>
+                <label>初始密码<input required type="password" autoComplete="new-password" maxLength={128} value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} /><small>密码不能为空，请通过安全渠道交给该管理员。</small></label>
                 <button className="primary-admin-button" type="submit" disabled={adminBusy}><UserPlus size={16} />{adminBusy ? "正在创建" : "创建管理员"}</button>
               </form>
             </div>
 
             <section className={maintenance.active ? "admin-panel deployment-panel is-maintaining" : "admin-panel deployment-panel"}>
               <div><span className="deployment-icon"><GitBranch size={22} /></span><div><span className="panel-kicker">GITHUB UPDATE</span><h2>从 GitHub 部署更新</h2><p>{session.user.role !== "superadmin" ? "拉取 GitHub 更新仅限超级管理员，普通管理员仍可开启或结束维护提示。" : updateConfigured ? "按钮会请求受限的 GitHub Actions 工作流更新服务器，不会向网页暴露 Docker 控制权限。" : "尚未配置 GitHub 更新令牌和部署工作流，按钮暂不可用。"}</p></div></div>
-              <div className="deployment-state"><span>{maintenance.active ? "维护提示已开启" : "系统正常开放"}</span>{maintenance.startedBy ? <small>由 {maintenance.startedBy} 开启</small> : null}</div>
+              <div className="deployment-state"><span>{maintenance.active ? "维护提示已开启" : "系统正常开放"}</span><small>当前版本 {currentVersion}</small>{maintenance.startedBy ? <small>由 {maintenance.startedBy} 开启</small> : null}</div>
               <div className="deployment-actions">
                 {maintenance.active ? <button className="text-admin-button" type="button" disabled={updateBusy} onClick={() => void changeMaintenance(false)}><Check size={15} />结束维护</button> : <button className="text-admin-button" type="button" disabled={updateBusy} onClick={() => void changeMaintenance(true)}><Wrench size={15} />仅开启维护提示</button>}
                 <button className="primary-admin-button" type="button" disabled={updateBusy || !updateConfigured || session.user.role !== "superadmin"} onClick={() => void dispatchUpdate()}><RefreshCw size={15} />{session.user.role !== "superadmin" ? "仅超级管理员可更新" : updateBusy ? "正在处理" : "拉取 GitHub 更新"}</button>

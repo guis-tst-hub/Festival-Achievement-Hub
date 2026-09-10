@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { logAdminAudit, requireAdminSession } from "../../../lib/admin-auth";
 import { apiError, HttpError, noStoreJson, readJson, requireSameOrigin } from "../../../lib/server-http";
-import { dispatchGitHubUpdate, getMaintenanceState, githubUpdateConfigured, setMaintenanceState } from "../../../lib/system-settings";
+import { dispatchGitHubUpdate, getCurrentAppVersion, getMaintenanceState, githubUpdateConfigured, setMaintenanceState } from "../../../lib/system-settings";
 
 const systemActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("setMaintenance"), active: z.boolean(), message: z.string().max(160).optional() }).strict(),
@@ -11,7 +11,11 @@ const systemActionSchema = z.discriminatedUnion("action", [
 export async function GET(request: Request) {
   try {
     await requireAdminSession(request);
-    return noStoreJson({ maintenance: await getMaintenanceState(), updateConfigured: githubUpdateConfigured() });
+    return noStoreJson({
+      maintenance: await getMaintenanceState(),
+      updateConfigured: githubUpdateConfigured(),
+      currentVersion: getCurrentAppVersion(),
+    });
   } catch (error) {
     return apiError(error, "system status lookup failed");
   }
