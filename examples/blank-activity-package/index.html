@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#f4f1ea">
   <title>活动包模板</title>
   <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/claim.css">
   <script src="/activity-package-sdk.js" defer></script>
   <script src="assets/activity.js" defer></script>
 </head>
@@ -67,5 +68,8 @@
       <div class="achievement-copy"><div><h4></h4><span class="achievement-state"></span></div><p></p></div>
     </article>
   </template>
+  <dialog id="claim-dialog" class="claim-dialog" aria-labelledby="claim-title">
+    <div id="claim-content" class="claim-content" aria-live="polite"></div>
+  </dialog>
 </body>
 </html>
