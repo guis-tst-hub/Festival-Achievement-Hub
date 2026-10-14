@@ -3,6 +3,7 @@
 
   var sequence = 0;
   var pending = new Map();
+  var claimListeners = new Set();
 
   function request(method, params, retryEnabled) {
     if (window.parent === window) return Promise.reject(new Error("活动包未在平台中运行"));
@@ -31,7 +32,12 @@
 
   window.addEventListener("message", function (event) {
     var message = event.data;
-    if (!message || message.source !== "ncpa-activity-host" || message.type !== "response") return;
+    if (event.source !== window.parent || !message || message.source !== "ncpa-activity-host") return;
+    if (message.type === "claimStateChanged") {
+      claimListeners.forEach(function (listener) { listener(message.value); });
+      return;
+    }
+    if (message.type !== "response") return;
     var operation = pending.get(message.requestId);
     if (!operation) return;
     window.clearTimeout(operation.timer);
@@ -48,6 +54,12 @@
     value: Object.freeze({
       version: 1,
       getContext: function (options) { return request("getContext", options); },
+      onClaimStateChange: function (listener) {
+        if (typeof listener !== "function") throw new TypeError("扫码状态监听器必须是函数");
+        claimListeners.add(listener);
+        return function () { claimListeners.delete(listener); };
+      },
+      dismissClaim: function () { return request("dismissClaim", undefined, false); },
       openScanner: function () { return request("openScanner"); },
       openLotteries: function () { return request("openLotteries"); },
       openPrizes: function () { return request("openPrizes"); },

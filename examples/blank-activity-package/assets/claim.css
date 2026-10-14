@@ -1,0 +1,13 @@
+@charset "UTF-8";
+.claim-dialog { width: min(420px, calc(100% - 32px)); max-height: calc(100svh - 32px); margin: auto; overflow-y: auto; border: 1px solid var(--line); border-radius: 22px; padding: 32px 24px; color: var(--ink); background: var(--surface); box-shadow: var(--shadow); }
+.claim-dialog::backdrop { background: #1f2022b3; backdrop-filter: blur(6px); }
+.claim-content { display: grid; justify-items: center; gap: 14px; text-align: center; overflow-wrap: anywhere; }
+.claim-icon { width: 84px; height: 84px; display: grid; place-items: center; overflow: hidden; border: 1px solid #96bbae; border-radius: 24px; color: var(--accent); background: var(--accent-soft); font-size: 38px; }
+.claim-icon img { width: 100%; height: 100%; object-fit: contain; }
+.claim-label { color: var(--accent); font-size: 11px; letter-spacing: .12em; }
+.claim-content h2 { margin: 0; font-family: var(--serif); font-size: 27px; font-weight: 500; }
+.claim-content h3 { margin: 0; font-size: 18px; }
+.claim-content p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
+.claim-done { width: 100%; min-height: 44px; margin-top: 10px; border: 0; border-radius: 12px; padding: 12px; color: white; background: var(--accent); cursor: pointer; }
+.claim-dialog[data-kind="error"] .claim-icon { border-color: #e1b8ae; color: #743d35; background: #fff2ef; }
+.claim-content .claim-error { color: #743d35; }

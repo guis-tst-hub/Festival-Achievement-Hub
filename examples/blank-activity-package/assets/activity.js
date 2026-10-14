@@ -20,6 +20,9 @@
     retry: document.getElementById("retry"),
     achievementTemplate: document.getElementById("achievement-template")
   };
+  var claimDialog = document.getElementById("claim-dialog");
+  var claimContent = document.getElementById("claim-content");
+  var claimPending = false;
 
   function createElement(tag, className, text) {
     var node = document.createElement(tag);
@@ -40,6 +43,41 @@
       container.textContent = icon;
     }
   }
+
+  function renderClaim(state) {
+    claimPending = Boolean(state && state.pending);
+    var result = state && state.result;
+    if (!claimPending && !result) {
+      if (claimDialog.open) claimDialog.close();
+      return;
+    }
+    claimDialog.dataset.kind = claimPending ? "pending" : result.kind;
+    claimContent.replaceChildren();
+    var icon = createElement("div", "claim-icon");
+    if (!claimPending && result.achievement) setIcon(icon, result.achievement.icon, result.achievement.name);
+    else icon.textContent = claimPending ? "⌛" : result.kind === "error" ? "!" : "✓";
+    var title = createElement("h2", "", claimPending ? "正在验证二维码" : result.title);
+    title.id = "claim-title";
+    claimContent.append(icon, createElement("span", "claim-label", claimPending ? "在线校验" : result.kind === "success" ? "成就解锁" : result.kind === "already" ? "重复领取" : "扫码提示"), title);
+    if (!claimPending && result.achievement) claimContent.append(createElement("h3", "", result.achievement.name));
+    claimContent.append(createElement("p", "", claimPending ? "正在检查活动和领取资格，请稍候。" : result.message));
+    if (!claimPending) {
+      var done = createElement("button", "claim-done", "返回活动");
+      done.type = "button";
+      done.addEventListener("click", dismissClaim);
+      claimContent.append(done);
+    }
+    if (!claimDialog.open) claimDialog.showModal();
+  }
+
+  async function dismissClaim() {
+    try { await window.NCPAActivity.dismissClaim(); }
+    catch (error) { claimContent.append(createElement("p", "claim-error", error.message || "请稍后重试。")); }
+  }
+  claimDialog.addEventListener("cancel", function (event) {
+    event.preventDefault();
+    if (!claimPending) dismissClaim();
+  });
 
   function renderAchievement(achievement) {
     var card = elements.achievementTemplate.content.firstElementChild.cloneNode(true);
@@ -106,7 +144,9 @@
     elements.connectionStatus.textContent = "正在连接活动平台……";
     try {
       if (!window.NCPAActivity) throw new Error("请将 ZIP 活动包导入平台，并从活动页面打开。");
-      render(await window.NCPAActivity.getContext());
+      var context = await window.NCPAActivity.getContext({ themedClaims: true });
+      render(context);
+      renderClaim(context.claim);
     } catch (error) {
       showError(error);
     } finally {
@@ -128,5 +168,9 @@
   });
   window.addEventListener("focus", connect);
   document.addEventListener("visibilitychange", function () { if (!document.hidden) connect(); });
+  if (window.NCPAActivity && typeof window.NCPAActivity.onClaimStateChange === "function") window.NCPAActivity.onClaimStateChange(function (state) {
+    renderClaim(state);
+    if (!state.pending && state.result) connect();
+  });
   connect();
 }());

@@ -73,6 +73,8 @@ docker compose down -v       # 会永久删除数据库，请谨慎
 
 导入会更新当前活动的名称、说明、分类和成就，但保留当前活动编号及开放状态。配置文件中的二维码识别码只会进入受保护的数据库，不会作为静态文件公开。活动包页面可通过 `/activity-package-sdk.js` 提供的 `window.NCPAActivity.getContext()` 和 `openScanner()` 接入平台。可直接上传 [`examples/cyberpunk-neon-package.zip`](examples/cyberpunk-neon-package.zip) 测试完整流程。
 
+活动包也可接管扫码验证中、成功、重复领取与失败提示的 UI：注册 `onClaimStateChange()`，通过 `getContext({ themedClaims: true })` 读取初始 `context.claim`，调用 `dismissClaim()` 返回活动。未接管的旧包继续使用平台默认提示。完整接入示例和数据字段见 [`examples/blank-activity-package-guide.md`](examples/blank-activity-package-guide.md)，空白模板和万圣节包均已内置主题扫码弹层；领取校验仍由平台后台执行。
+
 ## 不使用 Docker 的本地运行
 
 需要 Node.js 22 和 PostgreSQL 14+：

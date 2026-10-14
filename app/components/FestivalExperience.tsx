@@ -98,6 +98,8 @@ export function FestivalExperience() {
   const [directClaimPending, setDirectClaimPending] = useState(false);
   const [packageEntryUrl, setPackageEntryUrl] = useState<string | null>(null);
   const [themedNavigation, setThemedNavigation] = useState(false);
+  const [themedClaimsEntry, setThemedClaimsEntry] = useState<string | null>(null);
+  const [legacyPackageRevision, setLegacyPackageRevision] = useState(0);
   const [maintenance, setMaintenance] = useState<MaintenanceState>({ active: false, message: "系统正在维护，请稍后再试。" });
   const [lotteryWins, setLotteryWins] = useState<LotteryWin[]>([]);
   const [prizesOpen, setPrizesOpen] = useState(false);
@@ -110,6 +112,7 @@ export function FestivalExperience() {
   const [lotteryDrawResult, setLotteryDrawResult] = useState<ParticipantDrawResult | null>(null);
   const processedUrl = useRef(false);
   const packageFrame = useRef<HTMLIFrameElement>(null);
+  const lastPackageProgress = useRef<{ entry: string | null; count: number } | null>(null);
   const scannerVideo = useRef<HTMLVideoElement>(null);
   const scannerCanvas = useRef<HTMLCanvasElement>(null);
   const scannerStream = useRef<MediaStream | null>(null);
@@ -261,6 +264,8 @@ export function FestivalExperience() {
     }
   }
   const claimAchievement = useCallback(async (eventId: string, claimCode: string) => {
+    setDirectClaimPending(true);
+    setClaimResult(null);
     try {
       const response = await fetch("/api/claims", {
         method: "POST",
@@ -318,6 +323,8 @@ export function FestivalExperience() {
         title: "暂时无法在线校验",
         message: error instanceof Error ? error.message : "请确认设备已连接校园网络后重试。",
       });
+    } finally {
+      setDirectClaimPending(false);
     }
   }, [config]);
 
@@ -402,6 +409,7 @@ export function FestivalExperience() {
 
       if (message.method === "getContext") {
         if ((message.params as { themedNavigation?: boolean } | undefined)?.themedNavigation === true) setThemedNavigation(true);
+        if ((message.params as { themedClaims?: boolean } | undefined)?.themedClaims === true) setThemedClaimsEntry(packageEntryUrl);
         const achievements = activeAchievements.map((achievement) => ({
           ...achievement,
           claimCode: "",
@@ -413,11 +421,22 @@ export function FestivalExperience() {
           achievements,
           lotteries,
           wins: lotteryWins,
+          claim: { pending: directClaimPending, result: claimResult },
           progress: {
             unlocked: achievements.filter((achievement) => achievement.unlocked).length,
             total: achievements.length,
           },
         });
+        return;
+      }
+
+      if (message.method === "dismissClaim") {
+        if (directClaimPending) {
+          respond(message.requestId, false, undefined, "二维码仍在验证中");
+          return;
+        }
+        setClaimResult(null);
+        respond(message.requestId, true, true);
         return;
       }
 
@@ -497,7 +516,27 @@ export function FestivalExperience() {
 
     window.addEventListener("message", handlePackageMessage);
     return () => window.removeEventListener("message", handlePackageMessage);
-  }, [activeAchievements, config, lotteries, lotteryWins, openScanner, packageEntryUrl, unlockState]);
+  }, [activeAchievements, claimResult, config, directClaimPending, lotteries, lotteryWins, openScanner, packageEntryUrl, unlockState]);
+
+  const themedClaims = Boolean(packageEntryUrl && themedClaimsEntry === packageEntryUrl);
+  useEffect(() => {
+    const count = Object.keys(unlockState.unlocked).length;
+    const previous = lastPackageProgress.current;
+    lastPackageProgress.current = { entry: packageEntryUrl, count };
+    // Older packages refresh progress by reloading; themed claim dialogs keep their frame alive.
+    if (!themedClaims && previous?.entry === packageEntryUrl && previous.count !== count) {
+      const timer = window.setTimeout(() => setLegacyPackageRevision((revision) => revision + 1), 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [packageEntryUrl, themedClaims, unlockState]);
+  useEffect(() => {
+    if (!themedClaims) return;
+    packageFrame.current?.contentWindow?.postMessage({
+      source: "ncpa-activity-host",
+      type: "claimStateChanged",
+      value: { pending: directClaimPending, result: claimResult },
+    }, "*");
+  }, [claimResult, directClaimPending, themedClaims]);
 
   function closeScanner() {
     stopLiveScanner();
@@ -613,7 +652,7 @@ export function FestivalExperience() {
           <ClosedFestival />
         ) : packageEntryUrl ? (
           <iframe
-            key={`${packageEntryUrl}:${Object.keys(unlockState.unlocked).length}`}
+            key={`${packageEntryUrl}:${legacyPackageRevision}`}
             ref={packageFrame}
             className="activity-package-frame"
             src={packageEntryUrl}
@@ -773,7 +812,7 @@ export function FestivalExperience() {
           <h2>{hint.name}</h2><p>{hint.hintText || "暂无文字提示"}</p>
           {hint.hintImage && <img className="achievement-hint-image" src={hint.hintImage} alt={hint.name + "提示"} />}
         </div> : null}
-        {directClaimPending ? (
+        {directClaimPending && !themedClaims ? (
           <div className="claim-overlay direct-claim-pending" role="status" aria-live="polite">
             <div className="claim-seal verifying"><QrCode size={34} /></div>
             <span className="claim-kicker">直链激活</span>
@@ -783,7 +822,7 @@ export function FestivalExperience() {
           </div>
         ) : null}
 
-        {claimResult && !directClaimPending ? (
+        {claimResult && !directClaimPending && !themedClaims ? (
           <div className="claim-overlay" role="dialog" aria-modal="true" aria-label={claimResult.title}>
             <button className="overlay-close" onClick={() => setClaimResult(null)} aria-label="关闭提示"><X size={20} /></button>
             <div className={`claim-seal ${claimResult.kind}`}>
